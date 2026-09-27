@@ -1,5 +1,8 @@
+import { LensRail } from "../components/layout/LensRail.tsx";
 import { Ticker } from "../components/layout/Ticker.tsx";
+import { Workspace } from "../components/layout/Workspace.tsx";
 
+// App grid from project-4-metro-prototype.html: Ticker across the top, lens rail, stage, 388 px side panel.
 export default function Home() {
   return (
     <>
@@ -9,13 +12,12 @@ export default function Home() {
           <p className="mx-auto max-w-[36ch] text-mute">Metro is built for laptop and desktop displays, at least 1280 px wide. Widen this window to continue.</p>
         </div>
       </div>
-      <div className="flex h-screen flex-col max-[1279px]:hidden">
-        <Ticker />
-        <main className="flex flex-1 items-center justify-center">
-          <p className="max-w-[48ch] text-center text-mute">
-            The city view is not built yet. The readout above is live Robinhood Chain data from the Collector.
-          </p>
-        </main>
+      <div className="grid h-screen grid-cols-[64px_1fr_388px] grid-rows-[56px_1fr] overflow-hidden max-[1279px]:hidden">
+        <div className="col-span-3">
+          <Ticker />
+        </div>
+        <LensRail active="city" />
+        <Workspace />
       </div>
     </>
   );

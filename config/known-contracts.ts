@@ -43,6 +43,8 @@ export const RPC_POOL: readonly RpcEndpoint[] = [
 // Public explorer API is tried first. It sat behind a Cloudflare challenge (HTTP 403) for scripted requests on
 // 2026-09-27, so the PRO API (needs BLOCKSCOUT_API_KEY) is the fallback.
 export const BLOCKSCOUT_PUBLIC_API = "https://robinhoodchain.blockscout.com/api/v2";
+// Explorer pages for people. The bot challenge applies to scripted API calls, not to a browser opening a page.
+export const EXPLORER_URL = "https://robinhoodchain.blockscout.com";
 export const BLOCKSCOUT_API = "https://api.blockscout.com/4663/api/v2";
 
 export const PONS_FACTORY = "0x7ed598bcef8bd9edd8c97a195c6d13f40801ec7e";
