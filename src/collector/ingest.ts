@@ -1,9 +1,9 @@
 import { erc20Abi, getAddress, type Hex } from "viem";
-import { ARBOS_INTERNAL_TX_TYPE, PONS_FACTORY, TOPIC_TOKEN_LAUNCHED, TOPIC_TRANSFER } from "../../config/known-contracts.ts";
+import { PONS_FACTORY, TOPIC_TOKEN_LAUNCHED, TOPIC_TRANSFER } from "../../config/known-contracts.ts";
 import type { blocks, ponsLaunches, tokens, tokenTransfers, txs } from "../db/schema.ts";
 import { classifyAction, classifySubsidy } from "./classifier.ts";
 import { feeEth, feeUsd } from "./fees.ts";
-import type { PriceFeed } from "./price.ts";
+import type { PriceSource } from "./price.ts";
 import type { RpcClient } from "./rpc.ts";
 
 export type BlockBundle = {
@@ -43,20 +43,19 @@ async function tokenMetadata(client: RpcClient, address: string) {
   };
 }
 
-export async function fetchBlockBundle(client: RpcClient, prices: PriceFeed, number: bigint): Promise<BlockBundle> {
+export async function fetchBlockBundle(client: RpcClient, prices: PriceSource, number: bigint): Promise<BlockBundle> {
   const [block, receipts] = await Promise.all([
     client.getBlock({ blockNumber: number, includeTransactions: true }),
     client.getBlockReceipts({ blockNumber: number }),
   ]);
   const ts = new Date(Number(block.timestamp) * 1000);
   const receiptByHash = new Map(receipts.map((r) => [r.transactionHash.toLowerCase(), r]));
-  // The ArbOS internal transaction is a system record, not user activity; it is not stored in txs.
-  const userTxs = block.transactions.filter((t) => (t.typeHex ?? "").toLowerCase() !== ARBOS_INTERNAL_TX_TYPE);
+  // Every transaction of the block is stored (PROJECT.md 9.1), including the ArbOS internal one (type 0x6a).
   const isContract = await contractFlags(
     client,
-    userTxs.flatMap((t) => (t.to ? [t.to.toLowerCase()] : [])),
+    block.transactions.flatMap((t) => (t.to ? [t.to.toLowerCase()] : [])),
   );
-  const ethUsd = userTxs.length > 0 ? await prices.priceAt(ts) : null;
+  const ethUsd = block.transactions.length > 0 ? await prices.priceAt(ts) : null;
 
   const bundle: BlockBundle = {
     block: {
@@ -74,7 +73,7 @@ export async function fetchBlockBundle(client: RpcClient, prices: PriceFeed, num
     launches: [],
   };
 
-  for (const tx of userTxs) {
+  for (const tx of block.transactions) {
     const receipt = receiptByHash.get(tx.hash.toLowerCase());
     if (!receipt) throw new Error(`Missing receipt for ${tx.hash} in block ${number}`);
     const to = tx.to?.toLowerCase() ?? null;

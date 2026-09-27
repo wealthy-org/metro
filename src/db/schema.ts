@@ -3,6 +3,7 @@ import {
   bigint,
   bigserial,
   boolean,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -138,4 +139,9 @@ export const ingestCursor = pgTable("ingest_cursor", {
   updatedAt: tstz("updated_at").notNull().default(sql`now()`),
   lastError: text("last_error"),
   lastErrorAt: tstz("last_error_at"),
+  // Target range of a bounded cursor (the backfill); null for the open-ended live cursor.
+  rangeStart: bigint("range_start", { mode: "number" }),
+  rangeEnd: bigint("range_end", { mode: "number" }),
+  // Observed throughput of the cursor's worker; /api/health derives the backfill ETA from it.
+  blocksPerSecond: doublePrecision("blocks_per_second"),
 });

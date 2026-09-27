@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "collector": "node --env-file=.env src/collector/index.ts",
+    "backfill": "node --env-file=.env src/collector/backfill.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "verify:sources": "node scripts/verify-sources.ts"

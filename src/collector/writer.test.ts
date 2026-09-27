@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Db } from "../db/client.ts";
 import { blocks, ingestCursor, tokenTransfers, txs } from "../db/schema.ts";
 import type { BlockBundle } from "./ingest.ts";
-import { writeBatch } from "./writer.ts";
+import { writeBatch, type CursorUpdate } from "./writer.ts";
 
 // Integration test against the Neon dev branch (AT 1). Opt in with RUN_DB_TESTS=1; it writes and then removes
 // synthetic rows with block numbers far above the real chain head and a 2020-01-01 partition.
@@ -15,6 +15,9 @@ const BASE = 900_000_000_000;
 const TS = new Date("2020-01-01T00:00:00Z");
 const CURSOR = "test-writer";
 const MANUAL_CURSOR = "test-writer-manual";
+const BACK_CURSOR = "test-writer-backfill";
+const LIVE: CursorUpdate = { name: CURSOR, direction: "forward" };
+const BACK: CursorUpdate = { name: BACK_CURSOR, direction: "backward", range: { start: BASE + 100, end: BASE + 200 } };
 const hash = (n: number, kind: string) => `0x${kind}${n.toString(16).padStart(64 - kind.length, "0")}`;
 
 function bundle(n: number, txBlock = n): BlockBundle {
@@ -64,7 +67,7 @@ describe.skipIf(!enabled)("writeBatch on Postgres (PROJECT.md 9.1, AT 1)", () =>
     await db.delete(tokenTransfers).where(sql`${tokenTransfers.txHash} like '0xaa%' and ${tokenTransfers.ts} = ${TS}`);
     await db.delete(txs).where(inRange(txs.block));
     await db.delete(blocks).where(inRange(blocks.number));
-    await db.delete(ingestCursor).where(inArray(ingestCursor.name, [CURSOR, MANUAL_CURSOR]));
+    await db.delete(ingestCursor).where(inArray(ingestCursor.name, [CURSOR, MANUAL_CURSOR, BACK_CURSOR]));
     await db.execute(sql.raw(`DROP TABLE IF EXISTS "txs_20200101"`));
   }
 
@@ -90,15 +93,15 @@ describe.skipIf(!enabled)("writeBatch on Postgres (PROJECT.md 9.1, AT 1)", () =>
 
   it("re-writing the same blocks changes nothing", async () => {
     const batch = [bundle(BASE + 1), bundle(BASE + 2), bundle(BASE + 3)];
-    await writeBatch(db, CURSOR, batch);
+    await writeBatch(db, LIVE, batch);
     const first = await counts();
-    await writeBatch(db, CURSOR, batch);
+    await writeBatch(db, LIVE, batch);
     expect(await counts()).toEqual(first);
     expect(first).toEqual({ blocks: 3, txs: 3, transfers: 3, cursor: BASE + 3 });
   });
 
   it("never moves the cursor backwards", async () => {
-    await writeBatch(db, CURSOR, [bundle(BASE + 1)]);
+    await writeBatch(db, LIVE, [bundle(BASE + 1)]);
     expect((await counts()).cursor).toBe(BASE + 3);
   });
 
@@ -112,9 +115,16 @@ describe.skipIf(!enabled)("writeBatch on Postgres (PROJECT.md 9.1, AT 1)", () =>
   it("a failing batch leaves no partial rows and keeps the cursor", async () => {
     // The transaction references a block that does not exist, so the foreign key fails mid-transaction.
     const broken = bundle(BASE + 10, BASE + 999);
-    await expect(writeBatch(db, CURSOR, [broken])).rejects.toThrow();
+    await expect(writeBatch(db, LIVE, [broken])).rejects.toThrow();
     const [row] = await db.select().from(blocks).where(eq(blocks.number, BASE + 10));
     expect(row).toBeUndefined();
     expect((await counts()).cursor).toBe(BASE + 3);
+  });
+
+  it("a backward cursor keeps the lowest block and stores its range", async () => {
+    await writeBatch(db, BACK, [bundle(BASE + 150), bundle(BASE + 149)]);
+    await writeBatch(db, BACK, [bundle(BASE + 160)]);
+    const [row] = await db.select().from(ingestCursor).where(eq(ingestCursor.name, BACK_CURSOR));
+    expect(row).toMatchObject({ block: BASE + 149, rangeStart: BASE + 100, rangeEnd: BASE + 200 });
   });
 });

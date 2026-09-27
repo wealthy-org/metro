@@ -7,6 +7,14 @@ import type { BlockBundle } from "./ingest.ts";
 // Stays under Postgres' 65,535 bind-parameter limit for the widest table (txs, 14 columns).
 const CHUNK = 1_000;
 
+// forward (live): block = highest written, never decreases. backward (backfill): block = lowest written, never increases.
+export type CursorUpdate = {
+  name: string;
+  direction: "forward" | "backward";
+  range?: { start: number; end: number };
+  blocksPerSecond?: number;
+};
+
 function chunks<T>(rows: T[]): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < rows.length; i += CHUNK) out.push(rows.slice(i, i + CHUNK));
@@ -18,15 +26,15 @@ function uniqueBy<T>(rows: T[], key: (row: T) => string): T[] {
   return [...new Map(rows.map((r) => [key(r), r])).values()];
 }
 
-// Writes a batch of blocks and advances the cursor in one transaction, so a crash leaves either all or none (PROJECT.md 9.1).
-// cursorName is null for manual re-ingest of an arbitrary range, which must not move the cursor past unprocessed blocks.
-export async function writeBatch(db: Db, cursorName: string | null, bundles: BlockBundle[]): Promise<void> {
+// Writes a batch of blocks and moves the cursor in one transaction, so a crash leaves either all or none (PROJECT.md 9.1).
+// cursor is null for manual re-ingest of an arbitrary range, which must not move any cursor past unprocessed blocks.
+export async function writeBatch(db: Db, cursor: CursorUpdate | null, bundles: BlockBundle[]): Promise<void> {
   if (bundles.length === 0) return;
   const allTxs = bundles.flatMap((b) => b.txs);
   const allTransfers = bundles.flatMap((b) => b.transfers);
   const allTokens = uniqueBy(bundles.flatMap((b) => b.tokens), (t) => t.address);
   const allLaunches = uniqueBy(bundles.flatMap((b) => b.launches), (l) => l.tokenAddress);
-  const lastBlock = Math.max(...bundles.map((b) => b.block.number));
+  const numbers = bundles.map((b) => b.block.number);
 
   await ensureTxPartitions(db, allTxs.map((t) => t.ts));
 
@@ -38,14 +46,27 @@ export async function writeBatch(db: Db, cursorName: string | null, bundles: Blo
       await tx.insert(tokens).values(allTokens).onConflictDoUpdate({ target: tokens.address, set: { isPons: true } });
     }
     if (allLaunches.length > 0) await tx.insert(ponsLaunches).values(allLaunches).onConflictDoNothing();
-    if (cursorName === null) return;
+    if (cursor === null) return;
+
+    const forward = cursor.direction === "forward";
+    const block = forward ? Math.max(...numbers) : Math.min(...numbers);
+    const blocksPerSecond = cursor.blocksPerSecond ?? null;
     await tx
       .insert(ingestCursor)
-      .values({ name: cursorName, block: lastBlock })
+      .values({
+        name: cursor.name,
+        block,
+        rangeStart: cursor.range?.start ?? null,
+        rangeEnd: cursor.range?.end ?? null,
+        blocksPerSecond,
+      })
       .onConflictDoUpdate({
         target: ingestCursor.name,
-        // Never move the cursor backwards.
-        set: { block: sql`GREATEST(${ingestCursor.block}, excluded.block)`, updatedAt: sql`now()` },
+        set: {
+          block: forward ? sql`GREATEST(${ingestCursor.block}, excluded.block)` : sql`LEAST(${ingestCursor.block}, excluded.block)`,
+          updatedAt: sql`now()`,
+          ...(blocksPerSecond === null ? {} : { blocksPerSecond }),
+        },
       });
   });
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "ingest_cursor" ADD COLUMN "blocks_per_second" double precision;

@@ -14,15 +14,31 @@ export type KnownContract = {
 
 export const CHAIN_ID = 4663;
 
-// Order is the fallback order. Four of the five answered eth_chainId = 4663 on 2026-09-27;
-// arrowrpc returned HTTP 530 and is kept last so it is only tried when the others fail.
-export const RPC_POOL = [
-  "https://rpc.mainnet.chain.robinhood.com",
-  "https://robinhood-rpc.publicnode.com",
-  "https://robinhood.drpc.org",
-  "https://rpc.ordofi.network",
-  "https://rpc.arrowrpc.com",
-] as const;
+export type RpcEndpoint = {
+  url: string;
+  // Accepts JSON-RPC batches of 10+ calls (drpc free and tatum reject batches; publicnode stalls on them).
+  batch: boolean;
+  // Primary endpoints receive a share of block fetches; the rest are only used as fallbacks.
+  primary: boolean;
+  // chainlist.org marks the provider as tracking requests.
+  tracking?: boolean;
+};
+
+// All public RPCs listed for 4663 by ethereum-lists/chains and chainlist.org, probed 2026-09-27 (Phase 2 report 9).
+// Order is the fallback order. Left out: lb.routeme.sh (HTTP 429, needs sign-up), rpc.nodeflare.app (HTTP 403).
+export const RPC_POOL: readonly RpcEndpoint[] = [
+  { url: "https://rpc.mainnet.chain.robinhood.com", batch: true, primary: true },
+  { url: "https://rpc-robinhood.globalstake.io", batch: true, primary: true },
+  { url: "https://rpc.ordofi.network", batch: true, primary: true },
+  { url: "https://rpc-robinhood.blockmachine.io", batch: true, primary: true },
+  { url: "https://robinhood.api.pocket.network", batch: true, primary: false }, // 20-call batch took 2.6 s
+  { url: "https://robinhood.rpc.blxrbdn.com", batch: true, primary: false, tracking: true }, // 20-call batch took 2.9 s
+  { url: "https://robinhood.drpc.org", batch: false, primary: false },
+  { url: "https://robinhood-mainnet.gateway.tatum.io", batch: false, primary: false, tracking: true },
+  { url: "https://robinhood-rpc.publicnode.com", batch: false, primary: false },
+  // HTTP 530 on every probe so far; last resort only.
+  { url: "https://rpc.arrowrpc.com", batch: false, primary: false },
+];
 
 // The public host robinhoodchain.blockscout.com sits behind a Cloudflare challenge; the PRO API needs a key.
 export const BLOCKSCOUT_API = "https://api.blockscout.com/4663/api/v2";
@@ -32,8 +48,6 @@ export const TOPIC_TOKEN_LAUNCHED = "0x8d4aad4953d0ca700d468f3753aa14432d1b35b43
 
 // Nitro precompile for L2 -> L1 withdrawals (withdrawEth, sendTxToL1); eth_getCode returns 0xfe.
 export const ARBSYS = "0x0000000000000000000000000000000000000064";
-// ArbOS internal transaction type sent at the start of every block (from and to 0x...0a4b05, gas used 0).
-export const ARBOS_INTERNAL_TX_TYPE = "0x6a";
 // Nitro deposit (0x64) and retryable-submission (0x69) transaction types, both L1 -> L2 bridge traffic.
 // Defined by the Nitro protocol; none appeared in the 120-block sample, so this rule is not yet observed on 4663.
 export const BRIDGE_TX_TYPES = new Set(["0x64", "0x69"]);

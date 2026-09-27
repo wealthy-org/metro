@@ -17,7 +17,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
 const LOG_CHUNK_BLOCKS = 10_000;
 const LOG_MAX_CHUNKS = 20;
 
-const RPC_CANDIDATES: readonly string[] = RPC_POOL;
+const RPC_CANDIDATES: readonly string[] = RPC_POOL.map((e) => e.url);
 
 const BLOCKSCOUT_PUBLIC = "https://robinhoodchain.blockscout.com/api/v2";
 const BLOCKSCOUT_PRO = BLOCKSCOUT_API;

@@ -4,7 +4,7 @@ import { ingestCursor } from "../db/schema.ts";
 import { fetchBlockBundle } from "./ingest.ts";
 import { log } from "./log.ts";
 import { PriceFeed } from "./price.ts";
-import { createRpcClient } from "./rpc.ts";
+import { RpcPool } from "./rpc.ts";
 import { recordError, writeBatch } from "./writer.ts";
 
 type Options = { maxBlocks: number | null; startBlock: bigint | null; batch: number; cursor: string };
@@ -33,7 +33,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const { db, pool } = createDb();
-  const client = createRpcClient();
+  const rpc = new RpcPool();
   const prices = new PriceFeed(db);
   await prices.start();
 
@@ -46,7 +46,7 @@ async function main() {
   }
 
   const [saved] = await db.select().from(ingestCursor).where(eq(ingestCursor.name, opts.cursor)).limit(1);
-  let next = opts.startBlock ?? (saved ? BigInt(saved.block) + 1n : await client.getBlockNumber());
+  let next = opts.startBlock ?? (saved ? BigInt(saved.block) + 1n : await rpc.head.getBlockNumber());
   let processed = 0;
   let failures = 0;
   log("info", "collector started", {
@@ -58,7 +58,7 @@ async function main() {
 
   while (!stopping && (opts.maxBlocks === null || processed < opts.maxBlocks)) {
     try {
-      const head = await client.getBlockNumber();
+      const head = await rpc.head.getBlockNumber();
       if (next > head) {
         await sleep(250);
         continue;
@@ -69,9 +69,9 @@ async function main() {
       for (let n = next; n <= last; n++) numbers.push(n);
 
       const started = performance.now();
-      const bundles = await Promise.all(numbers.map((n) => fetchBlockBundle(client, prices, n)));
+      const bundles = await Promise.all(numbers.map((n) => fetchBlockBundle(rpc.forBlock(n), prices, n)));
       const fetched = performance.now();
-      await writeBatch(db, opts.startBlock === null ? opts.cursor : null, bundles);
+      await writeBatch(db, opts.startBlock === null ? { name: opts.cursor, direction: "forward" } : null, bundles);
 
       const txCount = bundles.reduce((sum, b) => sum + b.txs.length, 0);
       const other = bundles.reduce((sum, b) => sum + b.txs.filter((t) => t.action === "other").length, 0);
