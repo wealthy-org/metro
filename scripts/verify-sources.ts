@@ -1,8 +1,9 @@
 // Phase 0 source verification. Runs on Node 24+ native type stripping: `node scripts/verify-sources.ts`.
-// No dependencies. The optional BLOCKSCOUT_API_KEY env var enables the Blockscout PRO check and is never printed.
+// No dependencies. Blockscout is tried on the public URL first; BLOCKSCOUT_API_KEY (never printed) enables the PRO fallback.
 // Exits with code 1 when any check fails.
 
-import { BLOCKSCOUT_API, CHAIN_ID, PONS_FACTORY, RPC_POOL } from "../config/known-contracts.ts";
+import { CHAIN_ID, PONS_FACTORY, RPC_POOL } from "../config/known-contracts.ts";
+import { Blockscout } from "../src/collector/blockscout.ts";
 
 type Result = {
   group: string;
@@ -18,9 +19,6 @@ const LOG_CHUNK_BLOCKS = 10_000;
 const LOG_MAX_CHUNKS = 20;
 
 const RPC_CANDIDATES: readonly string[] = RPC_POOL.map((e) => e.url);
-
-const BLOCKSCOUT_PUBLIC = "https://robinhoodchain.blockscout.com/api/v2";
-const BLOCKSCOUT_PRO = BLOCKSCOUT_API;
 
 type Json = unknown;
 
@@ -183,14 +181,29 @@ async function checkPons(url: string) {
   }
 }
 
-async function checkBlockscout(base: string, label: string, headers: Record<string, string> = {}) {
-  const nonEmpty = (b: Json) => (itemsOf(b)?.length ? null : "empty items");
-  const stats = await getJson("blockscout", `${base}/stats`, (b) => (field(b, "total_blocks") ? null : "missing total_blocks"), `${label} /stats`, headers);
-  if (!stats) return;
-  await getJson("blockscout", `${base}/blocks`, nonEmpty, `${label} /blocks`, headers);
-  await getJson("blockscout", `${base}/transactions`, nonEmpty, `${label} /transactions`, headers);
-  await getJson("blockscout", `${base}/tokens`, (b) => (itemsOf(b) ? null : "no items array"), `${label} /tokens`, headers);
-  await getJson("blockscout", `${base}/stats/charts/transactions`, (b) => (Array.isArray(field(b, "chart_data")) ? null : "no chart_data"), `${label} /stats/charts/transactions`, headers);
+// Same route the Collector uses: public URL first, PRO API with BLOCKSCOUT_API_KEY only when public is blocked.
+async function checkBlockscout() {
+  const bs = new Blockscout();
+  const checks: [string, (b: Json) => string | null][] = [
+    ["/stats", (b) => (field(b, "total_blocks") ? null : "missing total_blocks")],
+    ["/blocks", (b) => (itemsOf(b)?.length ? null : "empty items")],
+    ["/transactions", (b) => (itemsOf(b)?.length ? null : "empty items")],
+    ["/tokens", (b) => (itemsOf(b) ? null : "no items array")],
+    ["/stats/charts/transactions", (b) => (Array.isArray(field(b, "chart_data")) ? null : "no chart_data")],
+  ];
+  for (const [path, check] of checks) {
+    const started = performance.now();
+    try {
+      const body = await bs.get(path);
+      const problem = check(body);
+      const route = bs.usingFallback ? "PRO fallback" : "public";
+      record({ group: "blockscout", target: path, ok: problem === null, ms: Math.round(performance.now() - started), detail: `${route}: ${problem ?? summarize(body)}` });
+    } catch (err) {
+      record({ group: "blockscout", target: path, ok: false, ms: Math.round(performance.now() - started), detail: err instanceof Error ? err.message : String(err) });
+      // Without a working route the remaining paths would fail the same way.
+      if (!process.env.BLOCKSCOUT_API_KEY) return;
+    }
+  }
 }
 
 async function checkMarketFeeds() {
@@ -218,13 +231,7 @@ async function main() {
     await checkChainShape(workingRpc);
     await checkPons(workingRpc);
   }
-  await checkBlockscout(BLOCKSCOUT_PUBLIC, "blockscout public");
-  const key = process.env.BLOCKSCOUT_API_KEY;
-  if (key) {
-    await checkBlockscout(BLOCKSCOUT_PRO, "blockscout PRO", { authorization: `Bearer ${key}` });
-  } else {
-    await getJson("blockscout", `${BLOCKSCOUT_PRO}/stats`, (b) => (field(b, "total_blocks") ? null : "missing total_blocks"), "blockscout PRO /stats (no key)");
-  }
+  await checkBlockscout();
   await checkMarketFeeds();
 
   for (const r of results) {

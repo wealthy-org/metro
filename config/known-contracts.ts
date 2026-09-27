@@ -40,7 +40,9 @@ export const RPC_POOL: readonly RpcEndpoint[] = [
   { url: "https://rpc.arrowrpc.com", batch: false, primary: false },
 ];
 
-// The public host robinhoodchain.blockscout.com sits behind a Cloudflare challenge; the PRO API needs a key.
+// Public explorer API is tried first. It sat behind a Cloudflare challenge (HTTP 403) for scripted requests on
+// 2026-09-27, so the PRO API (needs BLOCKSCOUT_API_KEY) is the fallback.
+export const BLOCKSCOUT_PUBLIC_API = "https://robinhoodchain.blockscout.com/api/v2";
 export const BLOCKSCOUT_API = "https://api.blockscout.com/4663/api/v2";
 
 export const PONS_FACTORY = "0x7ed598bcef8bd9edd8c97a195c6d13f40801ec7e";
