@@ -2,6 +2,8 @@
 // No dependencies. The optional BLOCKSCOUT_API_KEY env var enables the Blockscout PRO check and is never printed.
 // Exits with code 1 when any check fails.
 
+import { BLOCKSCOUT_API, CHAIN_ID, PONS_FACTORY, RPC_POOL } from "../config/known-contracts.ts";
+
 type Result = {
   group: string;
   target: string;
@@ -10,23 +12,15 @@ type Result = {
   detail: string;
 };
 
-const EXPECTED_CHAIN_ID = 4663;
-const PONS_FACTORY = "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e";
+const EXPECTED_CHAIN_ID = CHAIN_ID;
 const REQUEST_TIMEOUT_MS = 10_000;
 const LOG_CHUNK_BLOCKS = 10_000;
 const LOG_MAX_CHUNKS = 20;
 
-// Source: ethereum-lists/chains _data/chains/eip155-4663.json (PRD 4.1a). HTTPS entries only.
-const RPC_CANDIDATES = [
-  "https://rpc.mainnet.chain.robinhood.com",
-  "https://robinhood-rpc.publicnode.com",
-  "https://robinhood.drpc.org",
-  "https://rpc.ordofi.network",
-  "https://rpc.arrowrpc.com",
-];
+const RPC_CANDIDATES: readonly string[] = RPC_POOL;
 
 const BLOCKSCOUT_PUBLIC = "https://robinhoodchain.blockscout.com/api/v2";
-const BLOCKSCOUT_PRO = `https://api.blockscout.com/${EXPECTED_CHAIN_ID}/api/v2`;
+const BLOCKSCOUT_PRO = BLOCKSCOUT_API;
 
 type Json = unknown;
 
