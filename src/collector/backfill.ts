@@ -5,6 +5,7 @@ import { fetchBlockBundle } from "./ingest.ts";
 import { log } from "./log.ts";
 import { HistoricalPriceFeed } from "./price.ts";
 import { RpcPool, type RpcClient } from "./rpc.ts";
+import { Rollups } from "./rollup.ts";
 import { recordError, writeBatch, type CursorUpdate } from "./writer.ts";
 
 const CURSOR = "backfill";
@@ -52,6 +53,7 @@ async function main() {
   const { db, pool } = createDb();
   const rpc = new RpcPool();
   const prices = new HistoricalPriceFeed(db);
+  const rollups = new Rollups(db);
 
   let stopping = false;
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
@@ -95,6 +97,7 @@ async function main() {
       // Average since this run started, including pacing sleeps: the rate the ETA in /api/health should use.
       const blocksPerSecond = (processed + size) / ((performance.now() - startedAt) / 1000);
       await writeBatch(db, { ...cursor, blocksPerSecond }, bundles);
+      await rollups.afterBatch(bundles.map((b) => b.block.ts));
       processed += size;
       next -= size;
       failures = 0;
@@ -123,6 +126,7 @@ async function main() {
     if (elapsed < minMs) await sleep(minMs - elapsed);
   }
 
+  await rollups.flushDays().catch((err: unknown) => log("error", "day rollup failed", { error: err instanceof Error ? err.message : String(err) }));
   log("info", next < range.start ? "backfill complete" : "backfill stopped", { processed, next });
   await pool.end();
 }

@@ -22,6 +22,20 @@
       "when": 1790485098940,
       "tag": "0002_cursor_rate",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790489181734,
+      "tag": "0003_aggregates",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790494874501,
+      "tag": "0004_txs_ts_index",
+      "breakpoints": true
     }
   ]
 }

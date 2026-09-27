@@ -1,32 +1,9 @@
 import { inArray } from "drizzle-orm";
-import { createDb, type Db } from "../../../db/client.ts";
 import { ingestCursor } from "../../../db/schema.ts";
-import { rpcUrls } from "../../../collector/rpc.ts";
-import { limitedFetch } from "../../../collector/rate-limiter.ts";
+import { chainHead } from "../../../server/chain.ts";
+import { getDb } from "../../../server/http.ts";
 
 export const dynamic = "force-dynamic";
-
-let db: Db | null = null;
-const getDb = () => (db ??= createDb(process.env.DATABASE_URL, 2).db);
-
-async function chainHead(): Promise<{ head: number; rpc: string } | null> {
-  for (const url of rpcUrls()) {
-    try {
-      const res = await limitedFetch(url, 5)(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] }),
-        signal: AbortSignal.timeout(5_000),
-      });
-      const body: unknown = await res.json();
-      const result = typeof body === "object" && body !== null ? (body as { result?: unknown }).result : undefined;
-      if (res.ok && typeof result === "string") return { head: Number(result), rpc: url };
-    } catch {
-      // Try the next endpoint in the pool.
-    }
-  }
-  return null;
-}
 
 export async function GET() {
   const lagAlert = Number(process.env.LAG_ALERT_BLOCKS ?? 100);

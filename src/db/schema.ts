@@ -3,6 +3,7 @@ import {
   bigint,
   bigserial,
   boolean,
+  date,
   doublePrecision,
   index,
   integer,
@@ -17,7 +18,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-// Mirrors project-context/schema.md. Phase 1 tables only; aggregates and analytics arrive in later phases.
+// Mirrors project-context/schema.md. Analytics tables (facts, insights, dispatch, ...) arrive in later phases.
 
 const tstz = (name: string) => timestamp(name, { withTimezone: true });
 
@@ -74,6 +75,8 @@ export const txs = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.hash, t.ts] }),
+    // Time-range reads (Ticker median, series, 24h breakdown, day rollups) filter on ts alone.
+    index("idx_txs_ts").on(t.ts.desc()),
     index("idx_txs_from").on(t.fromAddress, t.ts.desc()),
     index("idx_txs_to").on(t.toAddress, t.ts.desc()),
     index("idx_txs_action").on(t.action, t.ts.desc()),
@@ -145,3 +148,38 @@ export const ingestCursor = pgTable("ingest_cursor", {
   // Observed throughput of the cursor's worker; /api/health derives the backfill ETA from it.
   blocksPerSecond: doublePrecision("blocks_per_second"),
 });
+
+// One row per minute and action (PROJECT.md 17). Recomputed from txs for every minute an ingest batch touches.
+// fee_usd_median uses percentile_disc(0.5): an actual fee value, the lower middle one for even counts.
+export const aggMinute = pgTable(
+  "agg_minute",
+  {
+    ts: tstz("ts").notNull(),
+    action: varchar("action", { length: 32, enum: ACTIONS }).notNull(),
+    txCount: integer("tx_count").notNull(),
+    gasUsed: numeric("gas_used").notNull(),
+    feeUsdSum: numeric("fee_usd_sum").notNull(),
+    feeUsdMedian: numeric("fee_usd_median").notNull(),
+    wallets: integer("wallets").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.ts, t.action] }), index("idx_agg_minute_ts").on(t.ts.desc())],
+);
+
+// One row per UTC day, action and subsidy class (PROJECT.md 17).
+export const aggDay = pgTable(
+  "agg_day",
+  {
+    date: date("date", { mode: "string" }).notNull(),
+    action: varchar("action", { length: 32, enum: ACTIONS }).notNull(),
+    subsidyClass: varchar("subsidy_class", { length: 24, enum: SUBSIDY_CLASSES }).notNull(),
+    txCount: integer("tx_count").notNull(),
+    gasUsed: numeric("gas_used").notNull(),
+    feeUsdAvg: numeric("fee_usd_avg").notNull(),
+    feeUsdMedian: numeric("fee_usd_median").notNull(),
+    activeWallets: integer("active_wallets").notNull(),
+    // Retention against the subsidy cliff is defined in Phase 8 (PROJECT.md 12.3); null until then rather than a fake 0.
+    retainedWallets: integer("retained_wallets"),
+    failedTxCount: integer("failed_tx_count").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.date, t.action, t.subsidyClass] })],
+);

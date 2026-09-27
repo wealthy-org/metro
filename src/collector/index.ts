@@ -5,6 +5,7 @@ import { fetchBlockBundle } from "./ingest.ts";
 import { log } from "./log.ts";
 import { PriceFeed } from "./price.ts";
 import { RpcPool } from "./rpc.ts";
+import { Rollups } from "./rollup.ts";
 import { recordError, writeBatch } from "./writer.ts";
 
 type Options = { maxBlocks: number | null; startBlock: bigint | null; batch: number; cursor: string };
@@ -36,6 +37,7 @@ async function main() {
   const rpc = new RpcPool();
   const prices = new PriceFeed(db);
   await prices.start();
+  const rollups = new Rollups(db);
 
   let stopping = false;
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
@@ -72,6 +74,7 @@ async function main() {
       const bundles = await Promise.all(numbers.map((n) => fetchBlockBundle(rpc.forBlock(n), prices, n)));
       const fetched = performance.now();
       await writeBatch(db, opts.startBlock === null ? { name: opts.cursor, direction: "forward" } : null, bundles);
+      await rollups.afterBatch(bundles.map((b) => b.block.ts));
 
       const txCount = bundles.reduce((sum, b) => sum + b.txs.length, 0);
       const other = bundles.reduce((sum, b) => sum + b.txs.filter((t) => t.action === "other").length, 0);
@@ -100,6 +103,7 @@ async function main() {
     }
   }
 
+  await rollups.flushDays().catch((err: unknown) => log("error", "day rollup failed", { error: err instanceof Error ? err.message : String(err) }));
   log("info", "collector stopped", { processed, next });
   prices.stop();
   await pool.end();

@@ -1,0 +1,1 @@
+CREATE INDEX "idx_txs_ts" ON "txs" USING btree ("ts" DESC NULLS LAST);
