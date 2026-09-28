@@ -1,5 +1,5 @@
 import { sql, type SQL } from "drizzle-orm";
-import { EXPLORER_URL } from "../../config/known-contracts.ts";
+import { ARBOS_SENDER, EXPLORER_URL } from "../../config/known-contracts.ts";
 import type { Db } from "../db/client.ts";
 import type { CityResponse, CityWindowInfo, InspectorResponse, InspectorSample } from "../lib/api-types.ts";
 import { actionLabel, CITY_ACTIONS, CITY_WINDOWS, isCityAction, MAX_TOKEN_BUILDINGS, RAW_WINDOW_MAX_SECONDS, type CityBuilding, type CityWindow } from "../lib/city.ts";
@@ -50,7 +50,8 @@ const rangeKey = (r: Range) => `${r.basis}|${r.start?.toISOString() ?? "-"}|${r.
 const actionFilter = (f: Filters) => (f.action ? sql`AND action = ${f.action}` : sql``);
 
 // `paid`: transactions classed likely_paid (PROJECT.md 12.2 estimate, KL-6); null when the query did not count it.
-type Stats = { key: string; tx_count: number; gas_volume: number; avg_fee_usd: number | null; wallets: number | null; failed: number | null; paid: number | null };
+// `system`: ArbOS internal transactions, left out of the paid-share denominator (Phase 8 D2, KL-7).
+type Stats = { key: string; tx_count: number; gas_volume: number; avg_fee_usd: number | null; wallets: number | null; failed: number | null; paid: number | null; system: number };
 
 const statsRow = (x: Row, withRaw: boolean): Stats => ({
   key: String(x.key),
@@ -60,8 +61,9 @@ const statsRow = (x: Row, withRaw: boolean): Stats => ({
   wallets: withRaw ? num(x.w) : null,
   failed: withRaw ? num(x.failed) : null,
   paid: x.paid === undefined || x.paid === null ? null : num(x.paid),
+  system: num(x.sys),
 });
-const PAID = sql`count(*) FILTER (WHERE subsidy_class = 'likely_paid') AS paid`;
+const PAID = sql`count(*) FILTER (WHERE subsidy_class = 'likely_paid') AS paid, count(*) FILTER (WHERE from_address = ${ARBOS_SENDER}) AS sys`;
 
 // `withRaw: false` skips the txs scan when only the additive figures are needed (the Inspector's previous window).
 async function actionStats(db: Db, r: Range, f: Filters, only?: string, withRaw = true): Promise<Stats[]> {
@@ -95,13 +97,13 @@ async function actionStats(db: Db, r: Range, f: Filters, only?: string, withRaw 
     const raw = new Map(rawOnly.map((x) => [String(x.key), x]));
     return additive.map((x) => {
       const extra = raw.get(String(x.key));
-      return statsRow({ ...x, w: extra?.w, failed: extra?.failed, paid: withRaw ? (extra?.paid ?? 0) : null }, withRaw);
+      return statsRow({ ...x, w: extra?.w, failed: extra?.failed, paid: withRaw ? (extra?.paid ?? 0) : null, sys: extra?.sys }, withRaw);
     });
   }
   const out = await rows(db, sql`
     SELECT action AS key, sum(tx_count) AS n, sum(gas_used) AS gas,
            sum(fee_usd_avg * tx_count) / nullif(sum(tx_count), 0) AS fee, sum(failed_tx_count) AS failed,
-           coalesce(sum(tx_count) FILTER (WHERE subsidy_class = 'likely_paid'), 0) AS paid
+           coalesce(sum(tx_count) FILTER (WHERE subsidy_class = 'likely_paid'), 0) AS paid, sum(system_tx_count) AS sys
     FROM agg_day WHERE ${dayRange(r)} ${actionFilter(f)} ${onlyFilter} GROUP BY action`);
   return out.map((x) => ({ ...statsRow(x, false), failed: num(x.failed) }));
 }
@@ -139,7 +141,8 @@ export async function tokenStats(db: Db, r: Range, f: Filters, only?: string, li
 
 export const tokenLabel = (t: { key: string; symbol: string | null }) => t.symbol || `${t.key.slice(0, 6)}…${t.key.slice(-4)}`;
 const failRate = (s: Stats | undefined) => (!s || s.failed === null || s.tx_count === 0 ? null : s.failed / s.tx_count);
-const paidShare = (s: Stats | undefined) => (!s || s.paid === null || s.tx_count === 0 ? null : s.paid / s.tx_count);
+// Among user transactions: ArbOS internal ones never pay a fee and are left out (Phase 8 D2).
+const paidShare = (s: Stats | undefined) => (!s || s.paid === null || s.tx_count - s.system <= 0 ? null : s.paid / (s.tx_count - s.system));
 
 // The figures never extend past the anchor block, so the window ends there for both bases.
 export function windowInfo(key: CityWindow, r: Range | null, firstTs: string | null, anchor: Date | null): CityWindowInfo {

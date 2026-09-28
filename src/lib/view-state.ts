@@ -4,7 +4,7 @@
 
 import { CITY_METRICS, CITY_WINDOWS, isCityAction, isCityWindow, RAW_WINDOW_MAX_SECONDS, type CityActionKey, type CityWindow } from "./city.ts";
 
-export const LENS_KEYS = ["city", "terrain", "heatmap", "flow", "launchpad"] as const;
+export const LENS_KEYS = ["city", "terrain", "heatmap", "flow", "launchpad", "split"] as const;
 export type LensKey = (typeof LENS_KEYS)[number];
 export const isLensKey = (v: string): v is LensKey => (LENS_KEYS as readonly string[]).includes(v);
 
@@ -37,6 +37,11 @@ export type Selection = { kind: "action"; key: string } | { kind: "token"; key: 
 export type CameraPreset = "angle" | "top" | "street";
 export type TerrainRows = "actions" | "tokens";
 export type HeatmapMode = "days" | "compare";
+// Split lens comparator (PROJECT.md 10.7, 11.4; Phase 8): two windows of whole UTC days, or two Pons tokens over one
+// window. Windows are "YYYY-MM-DD..YYYY-MM-DD"; null means the default 7 days before and after SUBSIDY_END_DATE.
+export type SplitMode = "windows" | "tokens";
+export type SplitState = { cmp: SplitMode; before: string | null; after: string | null; ta: string | null; tb: string | null };
+export const NO_SPLIT: SplitState = { cmp: "windows", before: null, after: null, ta: null, tb: null };
 
 export type ViewState = {
   lens: LensKey;
@@ -50,6 +55,7 @@ export type ViewState = {
   marks: string[];
   rows: TerrainRows;
   mode: HeatmapMode;
+  split: SplitState;
 };
 
 export const DEFAULT_VIEW: ViewState = {
@@ -63,10 +69,13 @@ export const DEFAULT_VIEW: ViewState = {
   marks: [],
   rows: "actions",
   mode: "days",
+  split: NO_SPLIT,
 };
 
 export const MAX_MARKS = 5;
 const ADDRESS = /^0x[0-9a-f]{40}$/;
+// Shape only; the server checks real dates and the 31-day limit (src/engine/subsidy.ts parseWindow).
+const SPLIT_WINDOW = /^\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}$/;
 const ISO_MINUTE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})Z$/;
 const ISO_HOUR = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):00Z$/;
 // Up to 1e9 ETH with at most 18 decimals, so the wei value is exact.
@@ -177,6 +186,13 @@ export function parseViewState(params: URLSearchParams, lens?: LensKey): ViewSta
     marks,
     rows: rows === "tokens" ? "tokens" : "actions",
     mode: mode === "compare" ? "compare" : "days",
+    split: {
+      cmp: get("cmp") === "tokens" ? "tokens" : "windows",
+      before: SPLIT_WINDOW.test(get("before") ?? "") ? get("before") : null,
+      after: SPLIT_WINDOW.test(get("after") ?? "") ? get("after") : null,
+      ta: ADDRESS.test((get("ta") ?? "").toLowerCase()) ? (get("ta") ?? "").toLowerCase() : null,
+      tb: ADDRESS.test((get("tb") ?? "").toLowerCase()) ? (get("tb") ?? "").toLowerCase() : null,
+    },
   });
 }
 
@@ -199,6 +215,11 @@ export function serializeViewState(s: ViewState, includeLens = true): URLSearchP
   if (n.marks.length) p.set("marks", n.marks.join(","));
   if (n.rows !== DEFAULT_VIEW.rows) p.set("rows", n.rows);
   if (n.mode !== DEFAULT_VIEW.mode) p.set("mode", n.mode);
+  if (n.split.cmp !== "windows") p.set("cmp", n.split.cmp);
+  if (n.split.before) p.set("before", n.split.before);
+  if (n.split.after) p.set("after", n.split.after);
+  if (n.split.ta) p.set("ta", n.split.ta);
+  if (n.split.tb) p.set("tb", n.split.tb);
   return p;
 }
 

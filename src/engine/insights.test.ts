@@ -81,17 +81,22 @@ describe("rules (PROJECT.md 13.2)", () => {
     expect(only([fact("base_fee_gwei.median_hourly", w.w7, 0.02, 2)], "gas_spike")[0]?.status).toBe("not_enough_data");
   });
 
-  it("subsidy_shift: before vs after with the covered days, or not enough data before any block after the end", () => {
+  it("subsidy_shift: rates per covered block with the coverage stated, evidence on /subsidy", () => {
     const after = w.after as { start: Date; end: Date };
     const facts = [
-      fact("paid_share.before", w.before, 0.2, 7000),
-      fact("tx_per_day.before", w.before, 1000, 7000),
-      fact("paid_share.after", after, 0.8, 4000),
-      fact("tx_per_day.after", after, 1000, 4000),
+      fact("paid_share.before", w.before, 0.9995, 7000),
+      fact("tx_per_block.before", w.before, 20.5, 7400),
+      fact("paid_share.after", after, 0.9990, 4000),
+      fact("tx_per_block.after", after, 18.45, 4200),
       fact("days_covered.after", after, 4, 4),
+      fact("block_coverage.before", w.before, 0.000417, 2520),
+      fact("block_coverage.after", after, 0.000417, 1440),
     ];
     const [i] = only(facts, "subsidy_shift");
-    expect(i?.text).toBe("Before 29 Sep vs after (4 of 7 days): transactions per day 1,000 to 1,000 (+0.0%); paid share (estimate) 20.0% to 80.0%; from 7,000 and 4,000 transactions.");
+    expect(i?.text).toBe(
+      "Before 29 Sep vs after (4 of 7 days): transactions per block 20.5 to 18.4 (-10.0%); paid share (estimate, ArbOS internal transactions left out) 100.0% to 99.9%; from 7,400 and 4,200 transactions. Sampled: 0.0% and 0.0% of blocks.",
+    );
+    expect(i?.evidenceUrl).toBe("/subsidy");
     const early = engineWindows(new Date("2026-09-27T15:51:16Z"), END);
     expect(only([], "subsidy_shift", ctx({ windows: early }))[0]?.text).toContain("no block after 29 Sep is ingested yet");
   });

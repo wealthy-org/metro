@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentRe
 import * as THREE from "three";
 import { BUILDING_FOOTPRINT, formatMetric, metricValue, slotPosition, type CityBuilding, type CityMetric } from "../../lib/city.ts";
 import type { CameraPreset } from "../../lib/view-state.ts";
+import type { CameraSync } from "./camera-sync.ts";
 
 type OrbitControlsImpl = ComponentRef<typeof OrbitControls>;
 
@@ -44,7 +45,45 @@ type SceneProps = {
   onContextLost: () => void;
   vehicles: VehicleSet | null;
   vehiclesMoving: boolean;
+  // Split lens (Phase 8 D4): the value under each label, the buildings marked as the largest changes, and a camera
+  // shared with the other pane.
+  valueLabels?: string[];
+  marked?: number[];
+  cameraSync?: CameraSync;
 };
+
+function SyncCamera({ sync }: { sync: CameraSync }) {
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls) as OrbitControlsImpl | null;
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    if (!controls) return;
+    const me = Symbol("pane");
+    let active = false;
+    const start = () => (active = true);
+    const end = () => (active = false);
+    const change = () => {
+      if (active) sync.publish(camera.position.clone(), me);
+    };
+    controls.addEventListener("start", start);
+    controls.addEventListener("end", end);
+    controls.addEventListener("change", change);
+    const off = sync.subscribe((pos, from) => {
+      if (from === me) return;
+      camera.position.copy(pos);
+      controls.target.copy(TARGET);
+      controls.update();
+      invalidate();
+    });
+    return () => {
+      controls.removeEventListener("start", start);
+      controls.removeEventListener("end", end);
+      controls.removeEventListener("change", change);
+      off();
+    };
+  }, [sync, camera, controls, invalidate]);
+  return null;
+}
 
 // Lit-window look of the prototype and the landing hero (PROJECT.md 20, audit A16): each building glows in its own cost
 // color. MeshStandardMaterial has one emissive color for all instances, so the instance color is added as emissive
@@ -126,7 +165,7 @@ export function Buildings({ buildings, heights, colors, selectedIndex, onSelect,
   );
 }
 
-function SelectionOutline({ index, height }: { index: number; height: number }) {
+function SelectionOutline({ index, height, color = "#c8f04a" }: { index: number; height: number; color?: string }) {
   const { x, z } = slotPosition(index);
   // Only the edges are rendered; the source box is not in the scene, so R3F will not dispose it.
   const box = useMemo(() => new THREE.BoxGeometry(1, 1, 1), []);
@@ -134,28 +173,32 @@ function SelectionOutline({ index, height }: { index: number; height: number }) 
   return (
     <lineSegments position={[x, height / 2, z]} scale={[BUILDING_FOOTPRINT + 0.25, height + 0.2, BUILDING_FOOTPRINT + 0.25]}>
       <edgesGeometry args={[box]} />
-      <lineBasicMaterial color="#c8f04a" />
+      <lineBasicMaterial color={color} />
     </lineSegments>
   );
 }
 
-function Labels({ buildings, heights, metric, selectedIndex, onSelect }: Pick<SceneProps, "buildings" | "heights" | "metric" | "selectedIndex" | "onSelect">) {
+// With `marked` given (Split), the value under a name shows only for marked and selected buildings, so seven labels
+// in a small pane stay readable (gate F56); the button's accessible name always carries the value.
+function Labels({ buildings, heights, metric, selectedIndex, onSelect, valueLabels, marked }: Pick<SceneProps, "buildings" | "heights" | "metric" | "selectedIndex" | "onSelect" | "valueLabels" | "marked">) {
   return (
     <>
       {buildings.map((b, i) => {
         const { x, z } = slotPosition(i);
         const selected = i === selectedIndex;
+        const value = valueLabels?.[i] ?? formatMetric(metricValue(b, metric), metric);
+        const showValue = !marked || selected || marked.includes(i);
         return (
           <Html key={`${b.kind}:${b.key}`} position={[x, (heights[i] ?? 0) + 0.3, z]} center zIndexRange={[20, 0]} style={{ transform: "translateY(-50%)" }}>
             <button
               type="button"
               onClick={() => onSelect(i)}
               aria-pressed={selected}
-              aria-label={`${b.label}: ${formatMetric(metricValue(b, metric), metric)}. Inspect`}
+              aria-label={`${b.label}: ${value}. Inspect`}
               className={`whitespace-nowrap text-center text-[11px] tracking-[0.04em] [text-shadow:0_1px_3px_#000] ${selected ? "text-accent" : "text-text"}`}
             >
               {b.label}
-              <small className="mt-0.5 block rounded-[2px] bg-bg/80 px-[5px] py-px font-mono text-[10px] text-text">{formatMetric(metricValue(b, metric), metric)}</small>
+              {showValue ? <small className="mt-0.5 block rounded-[2px] bg-bg/80 px-[5px] py-px font-mono text-[10px] text-text">{value}</small> : null}
             </button>
           </Html>
         );
@@ -337,9 +380,14 @@ export default function CityScene(props: SceneProps) {
       {props.vehicles ? <Vehicles set={props.vehicles} moving={props.vehiclesMoving} /> : null}
       <Buildings buildings={props.buildings} heights={props.heights} colors={props.colors} selectedIndex={props.selectedIndex} onSelect={props.onSelect} onHover={props.onHover} />
       {props.selectedIndex >= 0 ? <SelectionOutline index={props.selectedIndex} height={selectedHeight} /> : null}
-      {created ? <Labels buildings={props.buildings} heights={props.heights} metric={props.metric} selectedIndex={props.selectedIndex} onSelect={props.onSelect} /> : null}
+      {/* Largest changes (Split): a white outline, since the accent belongs to the selection (StyleGuide). */}
+      {(props.marked ?? []).filter((i) => i !== props.selectedIndex).map((i) => (
+        <SelectionOutline key={`mark-${i}`} index={i} height={props.heights[i] ?? 0} color="#e7e9ee" />
+      ))}
+      {created ? <Labels buildings={props.buildings} heights={props.heights} metric={props.metric} selectedIndex={props.selectedIndex} onSelect={props.onSelect} valueLabels={props.valueLabels} marked={props.marked} /> : null}
       <OrbitControls makeDefault target={TARGET.toArray()} enablePan={false} enableDamping={false} minDistance={10} maxDistance={70} minPolarAngle={0.1} maxPolarAngle={1.5} />
       <CameraRig preset={props.preset} nonce={props.presetNonce} reducedMotion={props.reducedMotion} />
+      {props.cameraSync ? <SyncCamera sync={props.cameraSync} /> : null}
     </Canvas>
   );
 }

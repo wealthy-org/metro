@@ -27,9 +27,10 @@ const METRIC_BUTTONS: Record<LensKey, MetricButton[]> = {
     { key: "avg_fee_usd", label: "Avg fee", title: "Average fee per transaction, USD" },
     { key: "gas_price", label: "Gas price", title: "Average block base fee, Gwei, chain-wide" },
   ],
-  // Flow colors by fee and Launchpad sorts by column; neither has a Metric choice.
+  // Flow colors by fee and Launchpad sorts by column; neither has a Metric choice. Split compares fixed rates.
   flow: [],
   launchpad: [],
+  split: [],
 };
 
 const segButton = (on: boolean, off: boolean) =>
@@ -79,7 +80,7 @@ export function Toolbar({ lens, state, onChange, extra }: { lens: LensKey; state
       </div>
       ) : null}
       {/* The live Flow has no time window; the window still decides whether raw-only filters apply (KL-20). */}
-      {lens !== "flow" ? (
+      {lens !== "flow" && lens !== "split" ? (
         <select aria-label="Window" value={state.window} onChange={(e) => onChange({ window: e.target.value as CityWindow })} className={`flex-none ${selectClass}`}>
           {CITY_WINDOWS.map((w) => (
             <option key={w.key} value={w.key}>
@@ -88,20 +89,27 @@ export function Toolbar({ lens, state, onChange, extra }: { lens: LensKey; state
           ))}
         </select>
       ) : null}
-      <select
-        aria-label="Action"
-        value={state.filters.action ?? ""}
-        onChange={(e) => onChange({ filters: { ...state.filters, action: isCityAction(e.target.value) ? e.target.value : null } })}
-        className={`flex-none ${selectClass}`}
-      >
-        <option value="">All actions</option>
-        {CITY_ACTIONS.map((a) => (
-          <option key={a.key} value={a.key}>
-            {a.label}
-          </option>
-        ))}
-      </select>
-      <FilterMenu state={state} onChange={onChange} />
+      {lens === "split" ? (
+        // The Split lens compares its own two windows or two tokens (PROJECT.md 11.4); the view filters do not apply.
+        <span className="text-[12px] text-mute">Pick the two windows or two Pons tokens in the lens.</span>
+      ) : (
+        <>
+          <select
+            aria-label="Action"
+            value={state.filters.action ?? ""}
+            onChange={(e) => onChange({ filters: { ...state.filters, action: isCityAction(e.target.value) ? e.target.value : null } })}
+            className={`flex-none ${selectClass}`}
+          >
+            <option value="">All actions</option>
+            {CITY_ACTIONS.map((a) => (
+              <option key={a.key} value={a.key}>
+                {a.label}
+              </option>
+            ))}
+          </select>
+          <FilterMenu state={state} onChange={onChange} />
+        </>
+      )}
       {extra}
     </div>
   );

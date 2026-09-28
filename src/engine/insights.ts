@@ -180,36 +180,41 @@ function gasSpike(facts: FactRow[], ctx: RuleContext): InsightDraft[] {
   ];
 }
 
+// Rule 4 over the Subsidy Cliff module's figures (Phase 8): rates per covered block, not per-day sums, because the
+// windows are sampled (D1, KL-28); the evidence is /subsidy (KL-27).
 function subsidyShift(facts: FactRow[], ctx: RuleContext): InsightDraft[] {
   const { before, after } = ctx.windows;
   const one = (key: string) => byKey(facts, key)[0];
   const pb = one("paid_share.before");
-  const tb = one("tx_per_day.before");
+  const tb = one("tx_per_block.before");
   const pa = one("paid_share.after");
-  const ta = one("tx_per_day.after");
+  const ta = one("tx_per_block.after");
   const days = one("days_covered.after");
-  const beforeUrl = lens("city", { ...ctx, windows: { ...ctx.windows, anchor: new Date(before.end.getTime() - 60_000) } }, { window: "7d" });
+  const cb = one("block_coverage.before");
+  const ca = one("block_coverage.after");
+  const url = "/subsidy";
   const s: Span = { start: before.start, end: after?.end ?? before.end };
   if (!after || !pa || !ta) {
-    return [notEnough("subsidy_shift", ctx, `no block after ${dayText(ctx.subsidyEnd)} is ingested yet`, pa?.n ?? 0, s, beforeUrl, [pb?.id, tb?.id].filter((x): x is number => x !== undefined))];
+    return [notEnough("subsidy_shift", ctx, `no block after ${dayText(ctx.subsidyEnd)} is ingested yet`, pa?.n ?? 0, s, url, [pb?.id, tb?.id].filter((x): x is number => x !== undefined))];
   }
   if (!pb || !tb || pb.n < ctx.minSample || pa.n < ctx.minSample) {
-    return [notEnough("subsidy_shift", ctx, "both 7-day windows need transactions", Math.min(pb?.n ?? 0, pa.n), s, beforeUrl, [pb?.id, tb?.id, pa.id, ta.id].filter((x): x is number => x !== undefined))];
+    return [notEnough("subsidy_shift", ctx, "both 7-day windows need transactions", Math.min(pb?.n ?? 0, pa.n), s, url, [pb?.id, tb?.id, pa.id, ta.id].filter((x): x is number => x !== undefined))];
   }
   const change = tb.value > 0 ? (ta.value - tb.value) / tb.value : null;
-  const covered = days ? `${int.format(days.value)} of 7 days` : "incomplete";
+  const complete = days ? `${int.format(days.value)} of 7 days` : "incomplete";
+  const sampled = cb && ca && (cb.value < 0.999 || ca.value < 0.999) ? ` Sampled: ${pct(cb.value)} and ${pct(ca.value)} of blocks.` : "";
   return [
     {
       id: idOf("subsidy_shift", ctx.subsidyEnd.toISOString()),
       rule: "subsidy_shift",
       status: "finding",
-      text: `Before ${dayText(ctx.subsidyEnd)} vs after (${covered}): transactions per day ${int.format(Math.round(tb.value))} to ${int.format(Math.round(ta.value))}${change === null ? "" : ` (${change >= 0 ? "+" : ""}${pct(change)})`}; paid share (estimate) ${pct(pb.value)} to ${pct(pa.value)}; from ${int.format(pb.n)} and ${int.format(pa.n)} transactions.`,
+      text: `Before ${dayText(ctx.subsidyEnd)} vs after (${complete}): transactions per block ${tb.value.toFixed(1)} to ${ta.value.toFixed(1)}${change === null ? "" : ` (${change >= 0 ? "+" : ""}${pct(change)})`}; paid share (estimate, ArbOS internal transactions left out) ${pct(pb.value)} to ${pct(pa.value)}; from ${int.format(tb.n)} and ${int.format(ta.n)} transactions.${sampled}`,
       severity: "info",
-      n: pb.n + pa.n,
+      n: tb.n + ta.n,
       start: s.start,
       end: s.end,
-      evidenceUrl: beforeUrl,
-      factIds: [pb.id, tb.id, pa.id, ta.id, ...(days ? [days.id] : [])],
+      evidenceUrl: url,
+      factIds: [pb.id, tb.id, pa.id, ta.id, ...[days, cb, ca].flatMap((f) => (f ? [f.id] : []))],
     },
   ];
 }

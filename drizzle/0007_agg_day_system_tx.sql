@@ -1,0 +1,1 @@
+ALTER TABLE "agg_day" ADD COLUMN "system_tx_count" integer DEFAULT 0 NOT NULL;

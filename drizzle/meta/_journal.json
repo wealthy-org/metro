@@ -50,6 +50,13 @@
       "when": 1790586146112,
       "tag": "0006_facts_insights",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790606607060,
+      "tag": "0007_agg_day_system_tx",
+      "breakpoints": true
     }
   ]
 }

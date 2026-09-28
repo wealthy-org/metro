@@ -13,7 +13,7 @@ export const RAIL_LENSES: RailLens[] = [
   { key: "graph", label: "Graph", path: "", ready: false },
   { key: "heatmap", label: "Heatmap", path: "M3 3h6v6H3zM15 3h6v6h-6zM9 9h6v6H9zM3 15h6v6H3zM15 15h6v6h-6z", ready: true },
   { key: "launchpad", label: "Launchpad", path: "M4 21V3M4 4h13l-3 4 3 4H4", ready: true },
-  { key: "split", label: "Split", path: "M3 4h8v16H3zM13 4h8v16h-8z", ready: false },
+  { key: "split", label: "Split", path: "M3 4h8v16H3zM13 4h8v16h-8z", ready: true },
 ];
 
 function Icon({ lens }: { lens: RailLens }) {

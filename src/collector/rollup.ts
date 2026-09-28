@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { ARBOS_SENDER } from "../../config/known-contracts.ts";
 import type { Db } from "../db/client.ts";
 
 const MINUTE_MS = 60_000;
@@ -29,17 +30,17 @@ export async function rollupDays(db: Db, days: Iterable<string>): Promise<void> 
     const start = new Date(`${day}T00:00:00Z`);
     const end = new Date(start.getTime() + 86_400_000);
     await db.execute(sql`
-      INSERT INTO agg_day (date, action, subsidy_class, tx_count, gas_used, fee_usd_avg, fee_usd_median, active_wallets, failed_tx_count)
+      INSERT INTO agg_day (date, action, subsidy_class, tx_count, gas_used, fee_usd_avg, fee_usd_median, active_wallets, failed_tx_count, system_tx_count)
       SELECT ${day}::date, action, subsidy_class, count(*), sum(gas_used), avg(fee_usd),
              percentile_disc(0.5) WITHIN GROUP (ORDER BY fee_usd), count(DISTINCT from_address),
-             count(*) FILTER (WHERE status = 0)
+             count(*) FILTER (WHERE status = 0), count(*) FILTER (WHERE from_address = ${ARBOS_SENDER})
       FROM txs
       WHERE ts >= ${start} AND ts < ${end}
       GROUP BY action, subsidy_class
       ON CONFLICT (date, action, subsidy_class) DO UPDATE SET
         tx_count = excluded.tx_count, gas_used = excluded.gas_used, fee_usd_avg = excluded.fee_usd_avg,
         fee_usd_median = excluded.fee_usd_median, active_wallets = excluded.active_wallets,
-        failed_tx_count = excluded.failed_tx_count`);
+        failed_tx_count = excluded.failed_tx_count, system_tx_count = excluded.system_tx_count`);
   }
 }
 

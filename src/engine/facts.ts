@@ -5,6 +5,7 @@ import { CITY_ACTIONS } from "../lib/city.ts";
 import { resolveRange } from "../server/city.ts";
 import { holderStats, ponsNonHolders } from "../server/holders.ts";
 import { iso, num, numOrNull, rows } from "../server/query.ts";
+import { computeSubsidy } from "./subsidy.ts";
 
 // Ledger of Facts (PROJECT.md 13.1): every number an insight cites, computed by SQL and code (never an LLM), with its
 // sample size and window. Windows end at the anchor (the newest ingested block) and are built with the lenses' own
@@ -88,15 +89,8 @@ export async function computeFacts(db: Db, w: Windows): Promise<{ facts: FactDra
     rows(db, sql`
       SELECT date_trunc('hour', ts) AS h, avg(base_fee) / 1e9 AS v, count(*) AS n
       FROM blocks WHERE base_fee IS NOT NULL AND ${between(TS, w.w7)} GROUP BY 1 ORDER BY 1`),
-    // Rule 4: paid share and transactions per day, 7 days before and after the subsidy end (agg_day; KL-6 estimate).
-    Promise.all([w.before, w.after].map((s) =>
-      s
-        ? rows(db, sql`
-            SELECT sum(tx_count) AS n, coalesce(sum(tx_count) FILTER (WHERE subsidy_class = 'likely_paid'), 0) AS paid,
-                   count(DISTINCT date) AS days
-            FROM agg_day WHERE date >= ${s.start.toISOString().slice(0, 10)}::date AND date < ${s.end.toISOString().slice(0, 10)}::date`)
-        : Promise.resolve([]),
-    )),
+    // Rule 4: the Subsidy Cliff windows (Phase 8), from the same module as /subsidy.
+    computeSubsidy(db, w.before, w.after ?? { start: w.before.end, end: new Date(w.before.end.getTime() + 7 * DAY_MS) }, w.before.end, w.anchor),
     // Rule 7: the busiest sender per action over 24 h, the ArbOS system sender left out (KL-7).
     rows(db, sql`
       WITH c AS (
@@ -143,17 +137,16 @@ export async function computeFacts(db: Db, w: Windows): Promise<{ facts: FactDra
   for (const x of hourly) push("base_fee_gwei.hour", span(Date.parse(x.h), Date.parse(x.h) + HOUR_MS), x.v, x.n);
   push("base_fee_gwei.median_hourly", w.w7, medianDisc(hourly.map((x) => x.v)), hourly.length);
 
-  (["before", "after"] as const).forEach((side, i) => {
+  (["before", "after"] as const).forEach((side) => {
     const s = side === "before" ? w.before : w.after;
-    const r = subsidy[i]?.[0];
-    if (!s || !r) return;
-    const n = num(r.n);
-    const days = num(r.days);
-    push(`days_covered.${side}`, s, days, days);
-    if (n > 0) {
-      push(`paid_share.${side}`, s, num(r.paid) / n, n);
-      push(`tx_per_day.${side}`, s, n / Math.max(1, days), n);
-    }
+    const f = subsidy[side];
+    if (!s || f.days_with_data === 0) return;
+    push(`days_covered.${side}`, s, f.days_ended, f.days_with_data);
+    push(`block_coverage.${side}`, s, f.coverage, f.blocks_covered);
+    push(`tx_per_block.${side}`, s, f.tx_per_block, f.tx);
+    push(`est_tx_per_day.${side}`, s, f.est_tx_per_day, f.tx);
+    push(`paid_share.${side}`, s, f.paid_share, f.user_tx);
+    push(`median_fee_usd.all.${side}`, s, f.median_fee_usd, f.tx);
   });
 
   for (const x of wallets) {

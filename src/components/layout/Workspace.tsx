@@ -2,13 +2,14 @@
 
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isLensKey, isShortWindow, normalize, parseViewState, rawFilterCount, serializeViewState, type LensKey, type ViewState } from "../../lib/view-state.ts";
+import { isLensKey, isShortWindow, NO_FILTERS, normalize, parseViewState, rawFilterCount, serializeViewState, type LensKey, type ViewState } from "../../lib/view-state.ts";
 import { CityView } from "../city/CityView.tsx";
 import { TimeScrubber } from "../controls/TimeScrubber.tsx";
 import { Toolbar } from "../controls/Toolbar.tsx";
 import { FlowView } from "../flow/FlowView.tsx";
 import { HeatmapView } from "../heatmap/HeatmapView.tsx";
 import { LaunchpadView } from "../launchpad/LaunchpadView.tsx";
+import { SplitView, type SplitInspect } from "../split/SplitView.tsx";
 import { WorkspacePanel } from "../panel/WorkspacePanel.tsx";
 import type { Chip, StageInfo } from "../stage.tsx";
 import { TerrainView } from "../terrain/TerrainView.tsx";
@@ -18,10 +19,9 @@ import { LensRail, RAIL_LENSES } from "./LensRail.tsx";
 // Every choice lives in the URL (PROJECT.md 11.2, 11.5; AT 9): the path names the lens, the query holds the rest.
 // Updates replace the URL in place, so reloading or sharing it restores the same view.
 
-const PHASE: Record<string, string> = { split: "Phase 8", graph: "Phase 9" };
+const PHASE: Record<string, string> = { graph: "Phase 9" };
 const QUESTION: Record<string, string> = {
   graph: "Which wallets keep moving value between each other?",
-  split: "What changed after the rebate ended?",
 };
 
 function SoonStage({ lens }: { lens: string }) {
@@ -42,11 +42,13 @@ export function Workspace({ lens }: { lens: string }) {
   const params = useSearchParams();
   const [state, setState] = useState<ViewState>(() => parseViewState(new URLSearchParams(params.toString()), built ?? "city"));
   const [info, setInfo] = useState<StageInfo | null>(null);
+  const [splitInspect, setSplitInspect] = useState<SplitInspect | null>(null);
 
   // A lens switch is a navigation with its own query; read it again.
   useEffect(() => {
     setState(parseViewState(new URLSearchParams(window.location.search), built ?? "city"));
     setInfo(null);
+    setSplitInspect(null);
   }, [built]);
 
   useEffect(() => {
@@ -79,6 +81,12 @@ export function Workspace({ lens }: { lens: string }) {
     }
   }, [state]);
 
+  // In Split the Inspector reads the clicked pane's window (gate F55): its own window and anchor, no filters; the URL
+  // keeps only the selection. Until Split says which window, or when it cannot be shown, the panel shows a note.
+  const split = built === "split";
+  const panelState = split && splitInspect && "window" in splitInspect ? { ...state, window: splitInspect.window, at: splitInspect.at, filters: NO_FILTERS } : state;
+  const panelNote = split && state.sel ? (splitInspect === null ? "Loading the split windows…" : "note" in splitInspect ? splitInspect.note : null) : null;
+
   return (
     <>
       <LensRail active={lens} query={query} />
@@ -89,10 +97,15 @@ export function Workspace({ lens }: { lens: string }) {
         {built === "heatmap" ? <HeatmapView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
         {built === "flow" ? <FlowView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
         {built === "launchpad" ? <LaunchpadView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
+        {built === "split" ? <SplitView state={state} onChange={onChange} onInfo={onInfo} onInspect={setSplitInspect} notice={notice} /> : null}
         {!built ? <SoonStage lens={lens} /> : null}
-        {built ? <TimeScrubber coverage={info?.coverage ?? null} at={state.at} onAt={onAt} subsidyEnd={info?.subsidy_end ?? null} /> : <div className="border-t border-line bg-panel" />}
+        {built && built !== "split" ? (
+          <TimeScrubber coverage={info?.coverage ?? null} at={state.at} onAt={onAt} subsidyEnd={info?.subsidy_end ?? null} />
+        ) : (
+          <div className="flex items-center border-t border-line bg-panel px-3.5 text-[12px] text-mute">{built === "split" ? "Split compares its own two windows or tokens, so the time scrubber does not apply here." : null}</div>
+        )}
       </main>
-      <WorkspacePanel state={state} onClear={() => onChange({ sel: null })} />
+      <WorkspacePanel state={panelState} note={panelNote} onClear={() => onChange({ sel: null })} />
     </>
   );
 }

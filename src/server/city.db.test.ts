@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ARBOS_SENDER } from "../../config/known-contracts.ts";
 import type { BlockBundle } from "../collector/ingest.ts";
 import { rollupDays, rollupMinutes } from "../collector/rollup.ts";
 import { writeBatch } from "../collector/writer.ts";
@@ -25,7 +26,7 @@ const OTHER_TOKEN = "0x00000000000000000000000000000000000c1702";
 const A = "0x00000000000000000000000000000000000000a1";
 const B = "0x00000000000000000000000000000000000000b2";
 
-type Spec = { action: "swap" | "approve" | "other"; fee: string; from: string; status?: number; token?: string };
+type Spec = { action: "swap" | "approve" | "other" | "contract_call"; fee: string; from: string; status?: number; token?: string; cls?: "likely_paid" | "unknown" };
 
 function bundle(n: number, ts: Date, specs: Spec[]): BlockBundle {
   const hashes = specs.map((_, i) => `0xc1${n.toString(16).padStart(50, "0")}${i.toString(16).padStart(12, "0")}`);
@@ -45,7 +46,7 @@ function bundle(n: number, ts: Date, specs: Spec[]): BlockBundle {
       status: s.status ?? 1,
       method: null,
       action: s.action,
-      subsidyClass: "likely_paid",
+      subsidyClass: s.cls ?? "likely_paid",
     })),
     transfers: specs.flatMap((s, i) =>
       s.token ? [{ txHash: hashes[i] ?? "", logIndex: 0, tokenAddress: s.token, fromAddress: s.from, toAddress: B, amount: "1", ts }] : [],
@@ -90,7 +91,12 @@ describe.skipIf(!enabled)("city lens and inspector reads (PROJECT.md 10.1, 11.1,
         { action: "approve", fee: "0.02", from: A, status: 0 },
         { action: "other", fee: "0.04", from: B, token: OTHER_TOKEN },
       ]),
-      bundle(BASE + 3, at("12:00:00"), [{ action: "swap", fee: "0.05", from: B, token: TOKEN }]),
+      // The ArbOS internal transaction is unknown class; paid share must leave it out (Phase 8 D2, KL-7).
+      bundle(BASE + 3, at("12:00:00"), [
+        { action: "swap", fee: "0.05", from: B, token: TOKEN },
+        { action: "contract_call", fee: "0", from: ARBOS_SENDER, cls: "unknown" },
+        { action: "contract_call", fee: "0.02", from: A },
+      ]),
     ]);
     await rollupMinutes(db, at("10:00:00"), at("12:00:00"));
     await rollupDays(db, [DAY]);
@@ -113,7 +119,7 @@ describe.skipIf(!enabled)("city lens and inspector reads (PROJECT.md 10.1, 11.1,
     expect(city.buildings.find((b) => b.key === "approve")).toMatchObject({ tx_count: 1, fail_rate: 1 });
     expect(city.buildings.find((b) => b.key === "bridge")).toMatchObject({ tx_count: 0, avg_fee_usd: null, fail_rate: null });
     expect(city.other_tx_count).toBe(1);
-    expect(city.n).toBe(5);
+    expect(city.n).toBe(7);
     const tokenBuildings = city.buildings.filter((b) => b.kind === "token");
     expect(tokenBuildings).toEqual([{ kind: "token", key: TOKEN, label: "CITY", tx_count: 3, gas_volume: 300, avg_fee_usd: expect.closeTo(0.03, 10), wallets: 2, fail_rate: null }]);
   });
@@ -145,6 +151,16 @@ describe.skipIf(!enabled)("city lens and inspector reads (PROJECT.md 10.1, 11.1,
       [at("11:30:00").toISOString(), 0.03],
     ]);
     expect(insp?.samples[0]?.explorer_url).toMatch(/^https:\/\/robinhoodchain\.blockscout\.com\/tx\/0xc1/);
+  });
+
+  it("paid share leaves ArbOS internal transactions out, on raw rows and on agg_day (Phase 8 D2)", async () => {
+    // contract_call has 2 transactions: 1 ArbOS (unknown), 1 user paid. With ArbOS in the denominator it reads 0.5.
+    for (const window of ["1h", "7d"] as const) {
+      const insp = await getInspector(db, { kind: "action", key: "contract_call", window, ...live }, at("12:00:00"));
+      expect(insp?.values, window).toMatchObject({ tx_count: 2, paid_share: 1 });
+    }
+    const day = await db.execute(sql`SELECT sum(system_tx_count) AS s FROM agg_day WHERE date = ${DAY}::date`);
+    expect(Number((day.rows[0] as { s: unknown }).s)).toBe(1);
   });
 
   it("getInspector covers Pons tokens and rejects tokens that are not Pons", async () => {

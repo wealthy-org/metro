@@ -188,11 +188,21 @@ function Details({ d, onClear, related }: { d: InspectorResponse; onClear: () =>
   );
 }
 
-function InspectorPane({ state, onClear, insights }: { state: ViewState; onClear: () => void; insights: InsightT[] | null }) {
+function InspectorPane({ state, note, onClear, insights }: { state: ViewState; note: string | null; onClear: () => void; insights: InsightT[] | null }) {
   const selected = state.sel;
-  const url = selected ? `/api/inspector?${dataQuery(state, { kind: selected.kind, key: selected.key })}` : null;
+  const url = selected && !note ? `/api/inspector?${dataQuery(state, { kind: selected.kind, key: selected.key })}` : null;
   const insp = usePolling<InspectorResponse>(url, state.at ? null : POLL_MS);
 
+  if (selected && note) {
+    return (
+      <>
+        <h3 className="mb-1 font-display text-[22px] font-bold tracking-[0.01em]">Inspector</h3>
+        <p role="status" className="rounded-[3px] border border-dashed border-line p-[18px] text-mute">
+          {note}
+        </p>
+      </>
+    );
+  }
   if (!selected) {
     return (
       <>
@@ -269,7 +279,7 @@ type TabKey = (typeof TABS)[number]["key"];
 
 const INSIGHTS_POLL_MS = 60_000;
 
-export function WorkspacePanel({ state, onClear }: { state: ViewState; onClear: () => void }) {
+export function WorkspacePanel({ state, note = null, onClear }: { state: ViewState; note?: string | null; onClear: () => void }) {
   const [tab, setTab] = useState<TabKey>("inspector");
   const ins = usePolling<InsightsResponse>("/api/v1/insights", INSIGHTS_POLL_MS);
   // Selecting an object shows it, whichever tab was open (prototype select(): showTab('insp')).
@@ -316,7 +326,7 @@ export function WorkspacePanel({ state, onClear }: { state: ViewState; onClear: 
       </div>
       {tab === "inspector" ? (
         <section id="panel-inspector" role="tabpanel" aria-labelledby="panel-tab-inspector" className="min-h-0 overflow-auto p-4">
-          <InspectorPane state={state} onClear={onClear} insights={ins.data?.insights ?? (ins.status === "error" ? [] : null)} />
+          <InspectorPane state={state} note={note} onClear={onClear} insights={ins.data?.insights ?? (ins.status === "error" ? [] : null)} />
         </section>
       ) : (
         <section id="panel-insights" role="tabpanel" aria-labelledby="panel-tab-insights" className="min-h-0 overflow-auto p-4">

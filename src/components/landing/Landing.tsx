@@ -4,7 +4,9 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { CityResponse, FlowResponse, HeatmapResponse, InsightsResponse, LaunchpadResponse, TerrainResponse } from "../../lib/api-types.ts";
+import type { SubsidyResponse } from "../../server/subsidy.ts";
 import { CITY_ACTIONS, costColor, cssColor, feeTop } from "../../lib/city.ts";
+import { BeforeAfterBars } from "../subsidy/SubsidyParts.tsx";
 import { formatAge, NA } from "../../lib/format.ts";
 import { timeLabel } from "../../lib/lenses.ts";
 import { usePolling, useReducedMotion } from "../hooks.ts";
@@ -55,7 +57,7 @@ const LENSES = [
   { key: "graph", n: "04", name: "Graph", q: "Which wallets keep moving value between each other?", text: "Wallets and contracts as nodes, transfers as lines. Groups come from patterns Metro can explain, such as a shared first funder. It shows at most 1,500 nodes and says when it trims.", phase: "Phase 9" },
   { key: "heatmap", n: "05", name: "Heatmap", q: "When is it cheapest to swap?", text: "One cell per hour. It answers when swapping is cheapest, and compares the hours before and after the rebate ended." },
   { key: "launchpad", n: "06", name: "Launchpad", q: "Which new Pons tokens are growing, and who holds them?", text: "New Pons tokens with age, holders, swap volume and how much the top ten holders own. Ownership above 50 percent is highlighted as a fact, not a verdict." },
-  { key: "split", n: "07", name: "Split", q: "What changed after the rebate ended?", text: "Two windows side by side with the difference marked. If the later window is not full, the page shows how many days it has.", phase: "Phase 8" },
+  { key: "split", n: "07", name: "Split", q: "What changed after the rebate ended?", text: "Two windows side by side with the difference marked. If the later window is not full, the page shows how many days it has." },
 ] as const;
 
 function CityArt({ d }: { d: CityResponse | null }) {
@@ -229,11 +231,36 @@ function TraceCard() {
   );
 }
 
+// The Subsidy Cliff chart (landing file lines 266-269) from /api/v1/subsidy, with the bars shared with /subsidy.
+function SubsidyChart() {
+  const s = usePolling<SubsidyResponse>("/api/v1/subsidy", null);
+  const d = s.data;
+  const after = d?.after;
+  const status = !d ? (s.status === "error" ? "Unavailable" : "Loading") : after && after.days_with_data > 0 ? `After window: ${after.days_ended} of ${after.days_total} days` : "After window: not started";
+  return (
+    <>
+      <div className="mb-2 flex justify-between font-mono text-[11px] uppercase tracking-[0.08em] text-mute">
+        <span>Average fee per action, USD</span>
+        <b className="font-medium text-c1">{d && (d.before.sampled || d.after.sampled) ? "Sampled blocks" : ""}</b>
+      </div>
+      {d && d.before.tx > 0 ? <BeforeAfterBars data={d} metric="avg_fee_usd" height={220} caption={false} /> : <div className="flex min-h-[260px] items-center justify-center p-6 text-center text-[15px] text-mute">{s.status === "error" ? "The figures could not be loaded just now." : d ? "No block from these windows is ingested yet." : "Loading live data…"}</div>}
+      <div className="mt-2 flex justify-between font-mono text-[11px] text-mute">
+        <span>Grey: before. Lime: after.</span>
+        <span>{status}</span>
+      </div>
+      <a href="/subsidy" className="mt-3 inline-block text-[14px] text-text underline decoration-mute underline-offset-4 hover:decoration-text">
+        Open the Subsidy Cliff page
+      </a>
+    </>
+  );
+}
+
 function LensStage({ lens, city }: { lens: (typeof LENSES)[number]; city: CityResponse | null }) {
   const terrain = usePolling<TerrainResponse>(lens.key === "terrain" ? "/api/lens/terrain/data?window=24h&metric=tx_count" : null, null);
   const heat = usePolling<HeatmapResponse>(lens.key === "heatmap" ? "/api/lens/heatmap/data?window=7d&metric=avg_fee_usd" : null, null);
   const flow = usePolling<FlowResponse>(lens.key === "flow" ? "/api/lens/flow/data" : null, null);
   const launch = usePolling<LaunchpadResponse>(lens.key === "launchpad" ? "/api/lens/launchpad/data?window=24h" : null, null);
+  const split = usePolling<SubsidyResponse>(lens.key === "split" ? "/api/v1/subsidy" : null, null);
   const phase = "phase" in lens ? lens.phase : null;
   return (
     <div className="sticky top-24 flex min-h-[440px] flex-col rounded-[4px] border border-line bg-panel p-[22px] max-[980px]:static" aria-live="polite">
@@ -247,6 +274,7 @@ function LensStage({ lens, city }: { lens: (typeof LENSES)[number]; city: CityRe
         {lens.key === "heatmap" ? <HeatArt d={heat.data} /> : null}
         {lens.key === "flow" ? <FlowArt d={flow.data} /> : null}
         {lens.key === "launchpad" ? <LaunchArt d={launch.data} /> : null}
+        {lens.key === "split" ? (split.data && split.data.before.tx > 0 ? <BeforeAfterBars data={split.data} metric="tx_per_block" height={220} caption={false} /> : <p className="text-[15px] text-mute">{split.data ? "No block from these windows is ingested yet." : "Loading live data…"}</p>) : null}
         {phase ? <p className="max-w-[36ch] text-center text-[15px] text-mute">This lens is built in {phase}. It will show real chain data only; there is no sample drawing here.</p> : null}
       </div>
       <p className="mt-3 text-[15px] text-mute">{lens.text}</p>
@@ -417,13 +445,7 @@ export function Landing() {
           </Reveal>
           <Reveal>
             <div className="rounded-[4px] border border-line bg-bg p-[18px]">
-              <div className="mb-2 flex justify-between font-mono text-[11px] uppercase tracking-[0.08em] text-mute">
-                <span>Average fee per action, USD</span>
-                <b className="font-medium text-c1">Not measured yet</b>
-              </div>
-              <div className="flex min-h-[260px] items-center justify-center p-6 text-center text-[15px] text-mute">
-                The before and after figures appear here once transactions from both sides of 29 September are ingested. The Subsidy Cliff module and the Split lens are built in Phase 8.
-              </div>
+              <SubsidyChart />
             </div>
           </Reveal>
         </div>

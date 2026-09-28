@@ -16,6 +16,7 @@ describe("view state in the URL (PROJECT.md 11.2, AT 9)", () => {
       marks: ["2026-09-27T14:00Z", "2026-09-27T15:00Z"],
       rows: "tokens",
       mode: "compare",
+      split: { cmp: "tokens", before: "2026-09-22..2026-09-28", after: "2026-09-29..2026-10-05", ta: "0x00000000000000000000000000000000000000a1", tb: "0x00000000000000000000000000000000000000b2" },
     };
     const url = serializeViewState(s).toString();
     expect(parseViewState(q(url))).toEqual(s);

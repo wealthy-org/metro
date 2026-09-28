@@ -181,6 +181,9 @@ export const aggDay = pgTable(
     // Retention against the subsidy cliff is defined in Phase 8 (PROJECT.md 12.3); null until then rather than a fake 0.
     retainedWallets: integer("retained_wallets"),
     failedTxCount: integer("failed_tx_count").notNull(),
+    // ArbOS internal transactions in the row (sender ARBOS_SENDER; KL-7). Paid share leaves them out of its
+    // denominator everywhere (Phase 8 D2). Usually one per block, sometimes two.
+    systemTxCount: integer("system_tx_count").notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.date, t.action, t.subsidyClass] })],
 );
