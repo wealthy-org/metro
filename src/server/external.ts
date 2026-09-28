@@ -1,4 +1,4 @@
-import { BlockscoutError, BlockscoutUnavailable, sharedBlockscout } from "../collector/blockscout.ts";
+import { BlockscoutError, BlockscoutUnavailable, sharedStatsService } from "../collector/blockscout.ts";
 import { log } from "../collector/log.ts";
 import { limitedFetch } from "../collector/rate-limiter.ts";
 
@@ -24,7 +24,7 @@ export type ChainEconomics = {
 };
 
 export type ChainStats =
-  | { available: true; total_transactions: number | null; total_addresses: number | null; transactions_today: number | null; source: "Blockscout"; fetched_at: string }
+  | { available: true; total_transactions: number | null; total_addresses: number | null; transactions_24h: number | null; source: "Blockscout"; fetched_at: string }
   | { available: false; reason: string; source: "Blockscout"; checked_at: string };
 
 const num = (v: unknown): number | null => {
@@ -86,8 +86,6 @@ export async function chainEconomics(now = Date.now()): Promise<ChainEconomics |
 let stats: { value: ChainStats; at: number } | null = null;
 let statsInflight: Promise<ChainStats> | null = null;
 
-const isObject = (v: unknown) => typeof v === "object" && v !== null && !Array.isArray(v);
-
 const GENERIC_REASON = "Blockscout explorer not reachable from the server";
 
 // Public reason for an unavailable chain stats readout. Messages of the Blockscout client are fixed texts written in
@@ -97,14 +95,23 @@ export function blockscoutReason(err: unknown): string {
   return err instanceof BlockscoutUnavailable || err instanceof BlockscoutError ? err.message : GENERIC_REASON;
 }
 
+// Stats service counters: [{ id, value }]. Only the three the Ticker shows are read.
+export function parseCounters(body: unknown): { total_transactions: number | null; total_addresses: number | null; transactions_24h: number | null } | null {
+  const list = field(body, "counters");
+  if (!Array.isArray(list)) return null;
+  const byId = new Map(list.map((c) => [String(field(c, "id")), field(c, "value")]));
+  return { total_transactions: num(byId.get("totalTxns")), total_addresses: num(byId.get("totalAddresses")), transactions_24h: num(byId.get("newTxns24h")) };
+}
+
 async function loadStats(): Promise<ChainStats> {
   try {
-    const body = await sharedBlockscout().get("/stats", { ttlMs: BLOCKSCOUT_TTL_MS, validate: isObject });
+    const body = await sharedStatsService().get("/counters", { ttlMs: BLOCKSCOUT_TTL_MS, validate: (b) => parseCounters(b) !== null });
+    const c = parseCounters(body);
     return {
       available: true,
-      total_transactions: num(field(body, "total_transactions")),
-      total_addresses: num(field(body, "total_addresses")),
-      transactions_today: num(field(body, "transactions_today")),
+      total_transactions: c?.total_transactions ?? null,
+      total_addresses: c?.total_addresses ?? null,
+      transactions_24h: c?.transactions_24h ?? null,
       source: "Blockscout",
       fetched_at: new Date().toISOString(),
     };
@@ -113,7 +120,7 @@ async function loadStats(): Promise<ChainStats> {
     const reason = blockscoutReason(err);
     log("warn", "blockscout request failed", {
       source: "blockscout",
-      path: "/stats",
+      path: "/stats-service/api/v1/counters",
       reason,
       retry_after: err instanceof BlockscoutUnavailable ? new Date(err.until).toISOString() : null,
     });

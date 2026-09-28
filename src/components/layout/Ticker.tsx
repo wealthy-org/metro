@@ -79,8 +79,8 @@ function ChainStatsReadout({ d }: { d: StatsResponse | null }) {
   }
   const tx = s.total_transactions != null ? formatCountCompact(s.total_transactions) : dash;
   const addresses = s.total_addresses != null ? formatCountCompact(s.total_addresses) : dash;
-  const today = s.transactions_today != null ? `, ${int.format(s.transactions_today)} tx today` : "";
-  return <Readout label="Tx / addresses" value={`${tx} / ${addresses}`} title={`Total transactions and addresses${today}. Blockscout, ${utc(s.fetched_at)}`} />;
+  const day = s.transactions_24h != null ? `, ${int.format(s.transactions_24h)} tx in the last 24 h` : "";
+  return <Readout label="Tx / addresses" value={`${tx} / ${addresses}`} title={`Total transactions and addresses${day}. Blockscout stats service, ${utc(s.fetched_at)}`} />;
 }
 
 export function Ticker() {

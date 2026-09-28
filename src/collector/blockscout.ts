@@ -162,6 +162,18 @@ let shared: Blockscout | null = null;
 // One client per process, so the rate limit, cache and breaker cover every caller.
 export const sharedBlockscout = () => (shared ??= new Blockscout());
 
+// Blockscout's stats microservice on the same host as BLOCKSCOUT_API_URL: the service behind /api/v2/stats and
+// /api/v2/stats/charts/* (PROJECT.md 8.1 "Statistik chain"). Unlike /api/v2/*, it is not behind the Cloudflare
+// challenge for server requests (checked from Node and Vercel, 2026-09-28; KL-3). Derived from the same variable, so
+// PROJECT.md 23 needs no new setting.
+export function statsServiceBase(apiUrl: string): string {
+  return `${new URL(apiUrl).origin}/stats-service/api/v1`;
+}
+
+let sharedStats: Blockscout | null = null;
+// Own breaker, so a block on /api/v2 does not stop the stats; same host, so the same rate-limit bucket.
+export const sharedStatsService = () => (sharedStats ??= new Blockscout({ base: statsServiceBase(process.env.BLOCKSCOUT_API_URL || BLOCKSCOUT_PUBLIC_API) }));
+
 function toQuery(query: Record<string, string>): string {
   const params = new URLSearchParams(query).toString();
   return params ? `?${params}` : "";

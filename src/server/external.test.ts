@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { BlockscoutError, BlockscoutUnavailable } from "../collector/blockscout.ts";
-import { blockscoutReason, parseFeeSummary, parseTvl } from "./external.ts";
+import { BlockscoutError, BlockscoutUnavailable, statsServiceBase } from "../collector/blockscout.ts";
+import { blockscoutReason, parseCounters, parseFeeSummary, parseTvl } from "./external.ts";
+
+describe("Blockscout stats service (PROJECT.md 8.1 chain stats, KL-3)", () => {
+  it("derives the stats service from BLOCKSCOUT_API_URL", () => {
+    expect(statsServiceBase("https://robinhoodchain.blockscout.com/api/v2")).toBe("https://robinhoodchain.blockscout.com/stats-service/api/v1");
+    expect(statsServiceBase("https://robinhoodchain.blockscout.com/api/v2/")).toBe("https://robinhoodchain.blockscout.com/stats-service/api/v1");
+  });
+
+  it("reads total transactions, addresses and the last 24 h from the counters", () => {
+    const body = { counters: [{ id: "totalTxns", value: "842656497" }, { id: "totalAddresses", value: "25436060" }, { id: "newTxns24h", value: "7493561" }, { id: "averageBlockTime", value: "0.1" }] };
+    expect(parseCounters(body)).toEqual({ total_transactions: 842656497, total_addresses: 25436060, transactions_24h: 7493561 });
+    expect(parseCounters({ counters: [] })).toEqual({ total_transactions: null, total_addresses: null, transactions_24h: null });
+    expect(parseCounters({ nope: 1 })).toBeNull();
+  });
+});
 
 describe("Blockscout reason in the chain stats readout (PROJECT.md 19)", () => {
   it("passes the client's own fixed messages through and keeps anything else generic", () => {
