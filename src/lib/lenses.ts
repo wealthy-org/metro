@@ -1,7 +1,7 @@
 // Terrain and Heatmap definitions shared by the server and the browser. Pure data only.
 
 import { formatMetric, type CityMetric, type CityWindow } from "./city.ts";
-import { formatGwei } from "./format.ts";
+import { formatGwei, NA } from "./format.ts";
 import type { Metric } from "./view-state.ts";
 
 // Terrain time buckets per range (PROJECT.md 10.2). Every size divides a day, so buckets align on UTC midnight.
@@ -19,7 +19,7 @@ export const bucketMs = (key: TerrainBucket) => Object.values(TERRAIN_BUCKETS).f
 export type CellState = "d" | "n" | "o";
 
 export function formatValue(value: number | null, metric: Metric): string {
-  if (metric === "gas_price") return value === null || !Number.isFinite(value) ? "—" : `${formatGwei(value)} Gwei`;
+  if (metric === "gas_price") return value === null || !Number.isFinite(value) ? NA : `${formatGwei(value)} Gwei`;
   return formatMetric(value, metric as CityMetric);
 }
 

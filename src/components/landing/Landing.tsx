@@ -3,8 +3,9 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { CityResponse, HeatmapResponse, TerrainResponse } from "../../lib/api-types.ts";
-import { costColor, cssColor } from "../../lib/city.ts";
+import type { CityResponse, FlowResponse, HeatmapResponse, LaunchpadResponse, TerrainResponse } from "../../lib/api-types.ts";
+import { CITY_ACTIONS, costColor, cssColor, feeTop } from "../../lib/city.ts";
+import { formatAge, NA } from "../../lib/format.ts";
 import { timeLabel } from "../../lib/lenses.ts";
 import { usePolling, useReducedMotion } from "../hooks.ts";
 
@@ -50,10 +51,10 @@ function Reveal({ children, className = "" }: { children: ReactNode; className?:
 const LENSES = [
   { key: "city", n: "01", name: "City", q: "Which actions carry the volume, and what do they cost?", text: "One building per action type and per Pons token. Height follows the metric you choose, color is the fee. Click a building to open its numbers." },
   { key: "terrain", n: "02", name: "Terrain", q: "How did each action move over time?", text: "Time across, action types (or Pons tokens) in depth, height and color from the metric. The 29 September line is drawn across it." },
-  { key: "flow", n: "03", name: "Flow", q: "What is moving right now, and how much does it pay?", text: "Every live transaction is a particle from source through action type to token, colored by fee. Pause it, filter it, click a dot.", phase: "Phase 6" },
+  { key: "flow", n: "03", name: "Flow", q: "What is moving right now, and how much does it pay?", text: "Every live transaction is a particle from source through action type to token, colored by fee. Pause it, filter it, click a dot." },
   { key: "graph", n: "04", name: "Graph", q: "Which wallets keep moving value between each other?", text: "Wallets and contracts as nodes, transfers as lines. Groups come from patterns Metro can explain, such as a shared first funder. It shows at most 1,500 nodes and says when it trims.", phase: "Phase 9" },
   { key: "heatmap", n: "05", name: "Heatmap", q: "When is it cheapest to swap?", text: "One cell per hour. It answers when swapping is cheapest, and compares the hours before and after the rebate ended." },
-  { key: "launchpad", n: "06", name: "Launchpad", q: "Which new Pons tokens are growing, and who holds them?", text: "New Pons tokens with age, holders, swap volume and how much the top ten holders own. Ownership above 50 percent is highlighted as a fact, not a verdict.", phase: "Phase 6" },
+  { key: "launchpad", n: "06", name: "Launchpad", q: "Which new Pons tokens are growing, and who holds them?", text: "New Pons tokens with age, holders, swap volume and how much the top ten holders own. Ownership above 50 percent is highlighted as a fact, not a verdict." },
   { key: "split", n: "07", name: "Split", q: "What changed after the rebate ended?", text: "Two windows side by side with the difference marked. If the later window is not full, the page shows how many days it has.", phase: "Phase 8" },
 ] as const;
 
@@ -117,25 +118,100 @@ function HeatArt({ d }: { d: HeatmapResponse | null }) {
   );
 }
 
+// Landing flow drawing (file line 460) filled with one live read: 7 action bars, token bars, a dot per transaction
+// placed along its path by its position in the read, colored by fee against the 95th percentile.
+function FlowArt({ d }: { d: FlowResponse | null }) {
+  if (!d || !d.rows.length) return <p className="text-[15px] text-mute">{d ? "No transactions in the newest blocks." : "Reading the newest blocks…"}</p>;
+  const actions = CITY_ACTIONS.map((a) => a.key as string);
+  const tokens = [...d.tokens.map((t) => t.key), "other", "none"];
+  const ay = (i: number) => 40 + i * (220 / (actions.length - 1));
+  const by = (i: number) => 40 + i * (220 / Math.max(1, tokens.length - 1));
+  const fees = d.rows.map((r) => r.fee_usd);
+  const top = feeTop(fees);
+  const rows = d.rows.slice(0, 120);
+  return (
+    <svg viewBox="0 0 400 300" role="img" aria-label={`Live Flow: ${rows.length} transactions from blocks ${d.blocks?.first ?? ""} to ${d.blocks?.last ?? ""}`} className="h-auto max-h-[340px] w-full">
+      {actions.map((a, i) => (
+        <rect key={a} x={190} y={ay(i) - 10} width={6} height={20} fill="#3a4152" />
+      ))}
+      {tokens.map((t, i) => (
+        <rect key={t} x={360} y={by(i) - 8} width={6} height={16} fill="#3a4152" />
+      ))}
+      <rect x={30} y={100} width={6} height={100} fill="#3a4152" />
+      {rows.map((r, i) => {
+        const t = ((i * 37) % 100) / 100;
+        const a = Math.max(0, actions.indexOf(r.action));
+        const pons = r.tokens.map((k) => d.tokens.findIndex((x) => x.key === k)).find((k) => k >= 0);
+        const b = pons !== undefined ? pons : r.tokens.length ? tokens.length - 2 : tokens.length - 1;
+        const x = t < 0.5 ? 33 + (193 - 33) * t * 2 : 193 + (363 - 193) * (t - 0.5) * 2;
+        const y = t < 0.5 ? 150 + (ay(a) - 150) * t * 2 : ay(a) + (by(b) - ay(a)) * (t - 0.5) * 2;
+        return <circle key={r.hash} cx={x.toFixed(1)} cy={y.toFixed(1)} r={1.5 + Math.min(2, Math.log10(1 + r.value_eth * 1_000))} fill={cssColor(costColor(Math.min(1, r.fee_usd / top)))} opacity={r.status === "failed" ? 0.45 : 0.85} />;
+      })}
+    </svg>
+  );
+}
+
+// Landing launch board (file line 463) with the live Launchpad rows: token, age, top-10 share bar (amber above 50%).
+// Ingested tokens come first, since only they have holder figures; newer launches read over RPC fill the rest (KL-24).
+function LaunchArt({ d }: { d: LaunchpadResponse | null }) {
+  const all = d?.tokens ?? [];
+  const rows = [...all.filter((t) => t.source === "ingested"), ...all.filter((t) => t.source === "rpc")].slice(0, 5);
+  if (!d || !rows.length) return <p className="text-[15px] text-mute">{d ? "No Pons token launched in the ingested blocks." : "Loading live data…"}</p>;
+  const end = Date.now();
+  return (
+    <svg viewBox="0 0 400 300" role="img" aria-label={`Live Launchpad: ${rows.length} Pons tokens`} className="h-auto max-h-[340px] w-full">
+      <text x={24} y={30} className="fill-mute font-mono text-[10px]">TOKEN</text>
+      <text x={130} y={30} className="fill-mute font-mono text-[10px]">AGE</text>
+      <text x={200} y={30} className="fill-mute font-mono text-[10px]">TOP 10 HOLD, POOL LEFT OUT</text>
+      {rows.map((t, i) => {
+        const y = 60 + i * 46;
+        const share = t.holders?.top10_share ?? null;
+        const w = share === null ? 0 : Math.round(share * 100) * 1.5;
+        return (
+          <g key={t.address}>
+            <line x1={20} y1={y - 22} x2={380} y2={y - 22} stroke="#242a36" />
+            <text x={24} y={y} className="fill-text font-mono text-[14px]">{(t.symbol ?? t.address.slice(0, 6)).slice(0, 10)}</text>
+            <text x={130} y={y} className="fill-mute font-mono text-[10px]">{formatAge(t.launch_ts, end)}</text>
+            {share === null ? (
+              <text x={200} y={y} className="fill-mute font-mono text-[10px]">{t.source === "rpc" ? "not ingested yet" : NA}</text>
+            ) : (
+              <>
+                <rect x={200} y={y - 12} width={w} height={12} fill={share > 0.5 ? "#f0b429" : "#3a4152"} />
+                <text x={208 + w} y={y} className="fill-mute font-mono text-[10px]">
+                  {Math.round(share * 100)}%{t.holders?.complete ? "" : "*"}
+                </text>
+              </>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 function LensStage({ lens, city }: { lens: (typeof LENSES)[number]; city: CityResponse | null }) {
   const terrain = usePolling<TerrainResponse>(lens.key === "terrain" ? "/api/lens/terrain/data?window=24h&metric=tx_count" : null, null);
   const heat = usePolling<HeatmapResponse>(lens.key === "heatmap" ? "/api/lens/heatmap/data?window=7d&metric=avg_fee_usd" : null, null);
+  const flow = usePolling<FlowResponse>(lens.key === "flow" ? "/api/lens/flow/data" : null, null);
+  const launch = usePolling<LaunchpadResponse>(lens.key === "launchpad" ? "/api/lens/launchpad/data?window=24h" : null, null);
   const phase = "phase" in lens ? lens.phase : null;
   return (
     <div className="sticky top-24 flex min-h-[440px] flex-col rounded-[4px] border border-line bg-panel p-[22px] max-[980px]:static" aria-live="polite">
       <div className="mb-2.5 flex justify-between font-mono text-[11px] uppercase tracking-[0.08em] text-mute">
         <span>{lens.name}</span>
-        <span>{phase ? `Arrives in ${phase}` : "Live data"}</span>
+        <span>{phase ? `Arrives in ${phase}` : lens.key === "flow" ? "Live from RPC" : "Live data"}</span>
       </div>
       <div className="flex min-h-[300px] flex-1 items-center justify-center">
         {lens.key === "city" ? <CityArt d={city} /> : null}
         {lens.key === "terrain" ? <TerrainArt d={terrain.data} /> : null}
         {lens.key === "heatmap" ? <HeatArt d={heat.data} /> : null}
+        {lens.key === "flow" ? <FlowArt d={flow.data} /> : null}
+        {lens.key === "launchpad" ? <LaunchArt d={launch.data} /> : null}
         {phase ? <p className="max-w-[36ch] text-center text-[15px] text-mute">This lens is built in {phase}. It will show real chain data only; there is no sample drawing here.</p> : null}
       </div>
       <p className="mt-3 text-[15px] text-mute">{lens.text}</p>
       {!phase ? (
-        <Link href={`/lens/${lens.key}`} className="mt-3 self-start text-[14px] text-text underline decoration-line underline-offset-4 hover:decoration-mute">
+        <Link href={`/lens/${lens.key}`} className="mt-3 self-start text-[14px] text-text underline decoration-mute hover:decoration-text">
           Open the {lens.name} lens
         </Link>
       ) : null}

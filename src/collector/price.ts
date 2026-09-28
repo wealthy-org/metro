@@ -4,7 +4,7 @@ import { prices } from "../db/schema.ts";
 import { log } from "./log.ts";
 import { limitedFetch } from "./rate-limiter.ts";
 
-const DEFAULT_SOURCE = "https://coins.llama.fi/prices/current/coingecko:ethereum";
+export const DEFAULT_SOURCE = "https://coins.llama.fi/prices/current/coingecko:ethereum";
 const CHART_SOURCE = "https://coins.llama.fi/chart/coingecko:ethereum";
 const POLL_MS = 60_000;
 // A past minute without its own quote (failed poll, or the timer fired later in that minute) reuses
@@ -33,7 +33,7 @@ async function storePrice(db: Db, minute: Date, ethUsd: string): Promise<string>
   return (await storedPrice(db, minute)) ?? ethUsd;
 }
 
-async function fetchCurrent(url: string): Promise<string> {
+export async function fetchCurrent(url: string): Promise<string> {
   const res = await defillamaFetch(url, { signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`ETH price HTTP ${res.status}`);
   const body: unknown = await res.json();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_VIEW, ethToWei, metricIssue, NO_FILTERS, normalize, parseIsoMinute, parseViewState, serializeViewState, type ViewState } from "./view-state.ts";
+import { dataQuery, DEFAULT_VIEW, ethToWei, metricIssue, NO_FILTERS, normalize, parseIsoMinute, parseViewState, serializeViewState, type ViewState } from "./view-state.ts";
 
 const q = (s: string) => new URLSearchParams(s);
 
@@ -47,6 +47,20 @@ describe("view state in the URL (PROJECT.md 11.2, AT 9)", () => {
     expect(metricIssue("terrain", "fail_rate", "7d")).toMatch(/24 h or less/);
     expect(metricIssue("city", "fail_rate", "7d")).toBeNull();
     expect(metricIssue("heatmap", "wallets", "24h")).toMatch(/hour cell/);
+  });
+
+  it("knows the Phase 6 lenses; they have no metric choice to reject", () => {
+    expect(parseViewState(q("lens=flow")).lens).toBe("flow");
+    expect(parseViewState(q("lens=launchpad&window=7d&sel=token:0x00000000000000000000000000000000000000a1")).sel).toEqual({ kind: "token", key: "0x00000000000000000000000000000000000000a1" });
+    expect(metricIssue("flow", "fail_rate", "30d")).toBeNull();
+    expect(metricIssue("launchpad", "gas_price", "all")).toBeNull();
+  });
+
+  it("keeps raw filters in Flow at any window and asks its API for 1h (gate F31)", () => {
+    const s = normalize({ ...DEFAULT_VIEW, lens: "flow", window: "7d", filters: { ...NO_FILTERS, status: "failed" } });
+    expect(s.filters.status).toBe("failed");
+    expect(dataQuery(s)).toBe("window=1h&status=failed");
+    expect(normalize({ ...s, lens: "city" }).filters.status).toBeNull();
   });
 });
 

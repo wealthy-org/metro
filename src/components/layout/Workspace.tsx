@@ -6,7 +6,9 @@ import { isLensKey, isShortWindow, normalize, parseViewState, rawFilterCount, se
 import { CityView } from "../city/CityView.tsx";
 import { TimeScrubber } from "../controls/TimeScrubber.tsx";
 import { Toolbar } from "../controls/Toolbar.tsx";
+import { FlowView } from "../flow/FlowView.tsx";
 import { HeatmapView } from "../heatmap/HeatmapView.tsx";
+import { LaunchpadView } from "../launchpad/LaunchpadView.tsx";
 import { WorkspacePanel } from "../panel/WorkspacePanel.tsx";
 import type { Chip, StageInfo } from "../stage.tsx";
 import { TerrainView } from "../terrain/TerrainView.tsx";
@@ -16,11 +18,9 @@ import { LensRail, RAIL_LENSES } from "./LensRail.tsx";
 // Every choice lives in the URL (PROJECT.md 11.2, 11.5; AT 9): the path names the lens, the query holds the rest.
 // Updates replace the URL in place, so reloading or sharing it restores the same view.
 
-const PHASE: Record<string, string> = { flow: "Phase 6", launchpad: "Phase 6", split: "Phase 8", graph: "Phase 9" };
+const PHASE: Record<string, string> = { split: "Phase 8", graph: "Phase 9" };
 const QUESTION: Record<string, string> = {
-  flow: "What is moving right now, and how much does it pay?",
   graph: "Which wallets keep moving value between each other?",
-  launchpad: "Which new Pons tokens are growing, and who holds them?",
   split: "What changed after the rebate ended?",
 };
 
@@ -87,6 +87,8 @@ export function Workspace({ lens }: { lens: string }) {
         {built === "city" ? <CityView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
         {built === "terrain" ? <TerrainView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
         {built === "heatmap" ? <HeatmapView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
+        {built === "flow" ? <FlowView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
+        {built === "launchpad" ? <LaunchpadView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
         {!built ? <SoonStage lens={lens} /> : null}
         {built ? <TimeScrubber coverage={info?.coverage ?? null} at={state.at} onAt={onAt} subsidyEnd={info?.subsidy_end ?? null} /> : <div className="border-t border-line bg-panel" />}
       </main>

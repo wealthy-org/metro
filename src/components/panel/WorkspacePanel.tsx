@@ -1,14 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import type { InspectorResponse } from "../../lib/api-types.ts";
 import { CITY_WINDOWS, formatMetric } from "../../lib/city.ts";
+import { formatAge, NA, shortHex as shortHash, utcMinute as utc } from "../../lib/format.ts";
 import { dataQuery, filterSummary, type ViewState } from "../../lib/view-state.ts";
 import { usePolling } from "../hooks.ts";
 
 const POLL_MS = 15_000;
 const int = new Intl.NumberFormat("en-US");
-const shortHash = (h: string) => `${h.slice(0, 6)}…${h.slice(-4)}`;
-const utc = (iso: string) => `${iso.replace("T", " ").slice(0, 16)} UTC`;
 
 const TREND_LABEL = { "5m": "per 5 minutes", "1h": "per hour", "1d": "per day" } as const;
 const KIND_LABEL = { action: "Action type", token: "Pons token", hour: "One UTC hour" } as const;
@@ -69,9 +69,8 @@ function Details({ d, onClear }: { d: InspectorResponse; onClear: () => void }) 
   const v = d.values;
   const change = d.previous?.change;
   const changeText =
-    d.previous === null ? "n/a for all to date" : change === null || change === undefined ? `— (previous window: ${int.format(d.previous.tx_count)})` : `${change >= 0 ? "+" : ""}${(change * 100).toFixed(1)}%`;
-  const age = d.token?.launch_ts ? Math.max(0, Date.now() - Date.parse(d.token.launch_ts)) : null;
-  const ageText = age === null ? "—" : age < 86_400_000 ? `${Math.round(age / 3_600_000)} h` : `${Math.round(age / 86_400_000)} d`;
+    d.previous === null ? "n/a for all to date" : change === null || change === undefined ? `${NA} (previous window: ${int.format(d.previous.tx_count)})` : `${change >= 0 ? "+" : ""}${(change * 100).toFixed(1)}%`;
+  const ageText = d.token?.launch_ts ? formatAge(d.token.launch_ts, Date.now()) : NA;
 
   return (
     <>
@@ -90,7 +89,7 @@ function Details({ d, onClear }: { d: InspectorResponse; onClear: () => void }) 
           ["Wallets", v.wallets === null ? "24 h or less only" : int.format(v.wallets)],
           ["Gas volume", formatMetric(v.gas_volume, "gas_volume")],
           ["Avg fee (blended)", formatMetric(v.avg_fee_usd, "avg_fee_usd")],
-          ["Paid share (estimate)", v.paid_share === null ? "—" : `${Math.round(v.paid_share * 100)}%`],
+          ["Paid share (estimate)", v.paid_share === null ? NA : `${Math.round(v.paid_share * 100)}%`],
           ["Fail rate", d.kind === "token" ? "n/a for tokens" : formatMetric(v.fail_rate, "fail_rate")],
           [d.kind === "hour" ? "Change vs previous hour" : "Change vs previous window", changeText],
         ]}
@@ -111,21 +110,28 @@ function Details({ d, onClear }: { d: InspectorResponse; onClear: () => void }) 
           <H4>Token</H4>
           <Kv
             rows={[
-              ["Name", d.token.name ?? "—"],
-              ["Symbol", d.token.symbol ?? "—"],
-              ["Launched", d.token.launch_ts ? `${utc(d.token.launch_ts)}, block ${int.format(d.token.launch_block ?? 0)}` : "—"],
+              ["Name", d.token.name ?? NA],
+              ["Symbol", d.token.symbol ?? NA],
+              ["Launched", d.token.launch_ts ? `${utc(d.token.launch_ts)}, block ${int.format(d.token.launch_block ?? 0)}` : NA],
               ["Age", ageText],
-              ["Holders, top 10 share", "unavailable (Blockscout)"],
             ]}
           />
-          {d.token.creator && d.token.creator_url ? (
-            <p className="mt-1.5 text-[12px] text-mute">
-              Creator{" "}
-              <a className="font-mono text-text underline decoration-line underline-offset-2 hover:decoration-mute" href={d.token.creator_url} target="_blank" rel="noopener noreferrer">
-                {shortHash(d.token.creator)}
-              </a>
-            </p>
-          ) : null}
+          <p className="mt-1.5 text-[12px] text-mute">
+            {d.token.creator ? (
+              <>
+                Creator{" "}
+                <Link className="font-mono text-text underline decoration-mute hover:decoration-text" href={`/wallet/${d.token.creator}`} prefetch={false}>
+                  {shortHash(d.token.creator)}
+                </Link>
+                .{" "}
+              </>
+            ) : null}
+            Holders, top-10 share and volume are on the{" "}
+            <Link className="text-text underline decoration-mute hover:decoration-text" href={`/token/${d.key}`} prefetch={false}>
+              token profile
+            </Link>
+            .
+          </p>
         </>
       ) : null}
 
@@ -145,9 +151,9 @@ function Details({ d, onClear }: { d: InspectorResponse; onClear: () => void }) 
             {d.samples.map((s) => (
               <tr key={s.hash}>
                 <td className="border-b border-line px-1.5 py-[7px] font-mono">
-                  <a href={s.explorer_url} target="_blank" rel="noopener noreferrer" title={`Block ${int.format(s.block)}, ${utc(s.ts)}. Opens on Blockscout`} className="underline decoration-line underline-offset-2 hover:decoration-mute">
+                  <Link href={`/tx/${s.hash}`} prefetch={false} title={`Block ${int.format(s.block)}, ${utc(s.ts)}`} className="underline decoration-mute hover:decoration-text">
                     {shortHash(s.hash)}
-                  </a>
+                  </Link>
                 </td>
                 <td className="border-b border-line px-1.5 py-[7px] text-right font-mono">{formatMetric(s.fee_usd, "avg_fee_usd")}</td>
                 <td className={`border-b border-line px-1.5 py-[7px] text-right font-mono ${s.status === "failed" ? "text-c2" : ""}`}>{s.status === "failed" ? "failed" : "ok"}</td>

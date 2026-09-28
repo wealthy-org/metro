@@ -75,7 +75,8 @@ export const KNOWN_CONTRACTS: KnownContract[] = [
     },
   },
   { address: ARBSYS, kind: "bridge", label: "ArbSys precompile (L2 to L1)" },
-  // Routers and pools are not listed: explorer access is needed to verify addresses.
+  // Routers and pools are not listed by address: Pons curve pools are one per token, known by their CurveBuy and
+  // CurveSell events below and by TokenLaunched topic2 (KL-5).
 ];
 
 export const TOPIC_TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -85,6 +86,11 @@ export const SWAP_EVENT_TOPICS = new Set([
   "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822", // Uniswap V2 Swap
   "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67", // Uniswap V3 Swap
   "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f", // Uniswap V4 Swap
+  // Pons curve pools (GeckoTerminal DEX "pons-v2"; each pool's factory() is PONS_FACTORY and it is the topic2 of its
+  // token's TokenLaunched). Names from the openchain signature database; checked on buy 0x00da68bc… and sell
+  // 0x8b81a175… on 2026-09-28 (KL-5, user decision 2026-09-28).
+  "0xec36bf571f136799e8dc0b0b8bea4b04d8bd3d43de838aab0d5fc21d4cbfc455", // CurveBuy(address,address,uint256,uint256,uint256,uint256)
+  "0x8113d738abdcb6b38357e9d53a54a7157861a09031b453651f0fe7fe151f59df", // CurveSell(address,address,uint256,uint256,uint256,uint256)
 ]);
 
 // Swap entry points seen in sampled mainnet transactions on 2026-09-27.

@@ -49,6 +49,15 @@ describe("classifyAction (PROJECT.md 9.3)", () => {
     expect(classifyAction(tx({ input: "0x3593564c0000" }))).toBe("swap");
   });
 
+  // Receipts of buy 0x00da68bc… (ETH in, FORGE out) and sell 0x8b81a175… (FORGE in, ETH out) on the Pons curve pool.
+  it("swap: Pons curve buy and sell, which also move the token (KL-5)", () => {
+    const pool = "0xfab8a29165408d3cb90d82056697ddfc988a74a7";
+    const buy = [{ address: TOKEN, topics: [TOPIC_TRANSFER, pad(pool), pad(EOA)] }, { address: pool, topics: ["0xec36bf571f136799e8dc0b0b8bea4b04d8bd3d43de838aab0d5fc21d4cbfc455", pad(EOA), pad(EOA)] }];
+    const sell = [{ address: TOKEN, topics: [TOPIC_TRANSFER, pad(CONTRACT), pad(pool)] }, { address: pool, topics: ["0x8113d738abdcb6b38357e9d53a54a7157861a09031b453651f0fe7fe151f59df", pad(CONTRACT), pad(CONTRACT)] }];
+    expect(classifyAction(tx({ to: pool, input: "0x59a87bc1", value: 5n * 10n ** 15n, logs: buy }))).toBe("swap");
+    expect(classifyAction(tx({ input: "0x4c731aa3", logs: sell }))).toBe("swap");
+  });
+
   it("erc20_transfer: Transfer with three topics and no swap", () => {
     expect(classifyAction(tx({ to: TOKEN, input: "0xa9059cbb", logs: [erc20Transfer] }))).toBe("erc20_transfer");
   });

@@ -84,6 +84,6 @@ describe("city layout helpers", () => {
     expect(formatMetric(0.003749, "avg_fee_usd")).toBe("$0.00375");
     expect(formatMetric(0.0123, "fail_rate")).toBe("1.2%");
     expect(formatMetric(1_234_567, "gas_volume")).toBe("1.2M");
-    expect(formatMetric(null, "wallets")).toBe("—");
+    expect(formatMetric(null, "wallets")).toBe("n/a");
   });
 });

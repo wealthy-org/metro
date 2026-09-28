@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { StatsResponse } from "../../lib/api-types.ts";
-import { formatCountCompact, formatDay, formatGwei, formatUsdCompact } from "../../lib/format.ts";
+import { formatCountCompact, formatDay, formatGwei, formatUsdCompact, NA } from "../../lib/format.ts";
 
 const POLL_MS = 5_000;
 
@@ -12,7 +12,7 @@ type State =
   | { kind: "error"; data: StatsResponse | null };
 
 const int = new Intl.NumberFormat("en-US");
-const dash = "—";
+const dash = NA;
 const utc = (iso: string) => `${iso.replace("T", " ").slice(0, 16)} UTC`;
 
 function windowTitle(label: string, n: number | undefined, start: string | null | undefined, end: string | undefined) {

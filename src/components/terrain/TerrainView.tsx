@@ -10,6 +10,7 @@ import { Segmented } from "../controls/Toolbar.tsx";
 import { usePolling, useReducedMotion } from "../hooks.ts";
 import { POLL_MS, scopeNote, StageChips, StageOverlay, useWebGl, type Chip, type StageInfo } from "../stage.tsx";
 import type { TerrainHover } from "./TerrainScene.tsx";
+import { NA } from "../../lib/format.ts";
 
 const TerrainScene = dynamic(() => import("./TerrainScene.tsx"), { ssr: false });
 const DAY = 86_400_000;
@@ -200,7 +201,7 @@ export function TerrainView({ state, onChange, onInfo, notice }: { state: ViewSt
         <div>Terrain height and color: {label}. Dark and flat: no data{state.at ? " or after the scrubber time" : ""}.</div>
         <div className="my-[5px] h-2 w-[180px] rounded-[2px]" style={{ background: `linear-gradient(90deg, ${cssColor(costColor(0))}, ${cssColor(costColor(0.5))}, ${cssColor(costColor(1))})` }} />
         <div className="flex w-[180px] justify-between font-mono">
-          <span>{d?.max != null ? formatValue(0, state.metric) : "—"}</span>
+          <span>{d?.max != null ? formatValue(0, state.metric) : NA}</span>
           <span>{formatValue(d?.max ?? null, state.metric)}</span>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">

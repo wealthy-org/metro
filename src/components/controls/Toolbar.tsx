@@ -27,6 +27,9 @@ const METRIC_BUTTONS: Record<LensKey, MetricButton[]> = {
     { key: "avg_fee_usd", label: "Avg fee", title: "Average fee per transaction, USD" },
     { key: "gas_price", label: "Gas price", title: "Average block base fee, Gwei, chain-wide" },
   ],
+  // Flow colors by fee and Launchpad sorts by column; neither has a Metric choice.
+  flow: [],
+  launchpad: [],
 };
 
 const segButton = (on: boolean, off: boolean) =>
@@ -49,12 +52,14 @@ export function Segmented<T extends string>({ label, value, options, onChange }:
 const selectClass = "rounded-[3px] border border-line bg-panel2 px-2 py-[5px] text-[12px] text-text";
 
 export function Toolbar({ lens, state, onChange, extra }: { lens: LensKey; state: ViewState; onChange: (patch: Partial<ViewState>) => void; extra?: ReactNode }) {
+  const metrics = METRIC_BUTTONS[lens];
   return (
     <div className="flex h-11 min-w-0 items-center gap-3 border-b border-line bg-panel px-3.5">
+      {metrics.length ? (
       <div className="flex flex-none items-center gap-2 text-[11px] uppercase tracking-[0.08em] text-mute">
         <span id="metric-label">Metric</span>
         <div className="flex overflow-hidden rounded-[3px] border border-line" role="group" aria-labelledby="metric-label">
-          {METRIC_BUTTONS[lens].map((m) => {
+          {metrics.map((m) => {
             const issue = metricIssue(lens, m.key, state.window);
             return (
               <button
@@ -72,13 +77,17 @@ export function Toolbar({ lens, state, onChange, extra }: { lens: LensKey; state
           })}
         </div>
       </div>
-      <select aria-label="Window" value={state.window} onChange={(e) => onChange({ window: e.target.value as CityWindow })} className={`flex-none ${selectClass}`}>
-        {CITY_WINDOWS.map((w) => (
-          <option key={w.key} value={w.key}>
-            {w.label}
-          </option>
-        ))}
-      </select>
+      ) : null}
+      {/* The live Flow has no time window; the window still decides whether raw-only filters apply (KL-20). */}
+      {lens !== "flow" ? (
+        <select aria-label="Window" value={state.window} onChange={(e) => onChange({ window: e.target.value as CityWindow })} className={`flex-none ${selectClass}`}>
+          {CITY_WINDOWS.map((w) => (
+            <option key={w.key} value={w.key}>
+              {w.label}
+            </option>
+          ))}
+        </select>
+      ) : null}
       <select
         aria-label="Action"
         value={state.filters.action ?? ""}

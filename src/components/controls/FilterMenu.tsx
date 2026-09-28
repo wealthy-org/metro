@@ -1,20 +1,20 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { isShortWindow, NO_FILTERS, parseEthAmount, RAW_FILTER_REASON, rawFilterCount, STATUSES, WALLET_CLASSES, type Filters, type TxStatus, type ViewState, type WalletClass } from "../../lib/view-state.ts";
+import { NO_FILTERS, parseEthAmount, RAW_FILTER_REASON, rawFilterCount, rawFiltersAllowed, STATUSES, WALLET_CLASSES, type Filters, type TxStatus, type ViewState, type WalletClass } from "../../lib/view-state.ts";
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const field = "w-full rounded-[3px] border border-line bg-bg px-2 py-[5px] font-mono text-[12px] text-text";
 const labelText = "mb-1 block text-[11px] uppercase tracking-[0.08em] text-mute";
 
 // Token, minimum value, wallet class and status (PROJECT.md 11.2). They need raw rows, so they apply to windows of
-// 24 h or less (KL-20); for longer windows the button is disabled and says why.
+// 24 h or less (KL-20), and always in Flow, which reads raw rows; otherwise the button is disabled and says why.
 export function FilterMenu({ state, onChange }: { state: ViewState; onChange: (patch: Partial<ViewState>) => void }) {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const id = useId();
-  const allowed = isShortWindow(state.window);
+  const allowed = rawFiltersAllowed(state);
   const count = rawFilterCount(state.filters);
   const [token, setToken] = useState(state.filters.token ?? "");
   const [value, setValue] = useState(state.filters.minValue ?? "");

@@ -1,5 +1,7 @@
 // City lens definitions shared by the server and the browser. Pure data and functions only.
 
+import { NA } from "./format.ts";
+
 // Buildings per action type as listed in PROJECT.md 10.1. `other` has no building.
 export const CITY_ACTIONS = [
   { key: "native_transfer", label: "Native transfer" },
@@ -104,8 +106,15 @@ export function feeScale(buildings: readonly CityBuilding[]): { min: number | nu
   return { min, max, colors };
 }
 
+// Top of a fee color scale: the 95th percentile of the fees in view, so one expensive transaction does not turn
+// every other one teal (Flow particles, City vehicles, landing; gate F37). At least 1e-9 to avoid a zero divisor.
+export function feeTop(fees: readonly number[]): number {
+  const sorted = [...fees].sort((a, b) => a - b);
+  return Math.max(1e-9, sorted[Math.floor((sorted.length - 1) * 0.95)] ?? 0);
+}
+
 export function formatMetric(value: number | null, metric: CityMetric): string {
-  if (value === null || !Number.isFinite(value)) return "—";
+  if (value === null || !Number.isFinite(value)) return NA;
   if (metric === "avg_fee_usd") return value === 0 ? "$0" : value >= 1 ? `$${value.toFixed(2)}` : `$${value.toPrecision(3)}`;
   if (metric === "fail_rate") return `${(value * 100).toFixed(1)}%`;
   if (metric === "gas_volume") return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);

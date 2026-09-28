@@ -5,6 +5,7 @@ import type { CityResponse, CityWindowInfo, InspectorResponse, InspectorSample }
 import { actionLabel, CITY_ACTIONS, CITY_WINDOWS, isCityAction, MAX_TOKEN_BUILDINGS, RAW_WINDOW_MAX_SECONDS, type CityBuilding, type CityWindow } from "../lib/city.ts";
 import { isoMinuteDate, NO_FILTERS, rawFilterCount, type Filters } from "../lib/view-state.ts";
 import { anchorAt, coverage, filterKey, parseDataParams, subsidyEnd, txFilter } from "./filters.ts";
+import { tokenMarkets } from "./gecko.ts";
 import { cachedRows, iso, isoDay, num, numOrNull, rows, type Row } from "./query.ts";
 
 // City lens and Inspector reads (PROJECT.md 10.1, 11.1, 11.2, 18). Windows end at the anchor: the newest ingested
@@ -152,13 +153,25 @@ export async function firstDataTs(db: Db, r: Range): Promise<string | null> {
   return first?.d ? `${String(first.d).slice(0, 10)}T00:00:00.000Z` : null;
 }
 
-export async function getCity(db: Db, window: CityWindow, anchor?: Date | null, filters: Filters = NO_FILTERS): Promise<CityResponse> {
+export async function getCity(db: Db, window: CityWindow, anchor?: Date | null, filters: Filters = NO_FILTERS, rankByVolume = false): Promise<CityResponse> {
   const [at, cov] = await Promise.all([anchor === undefined ? anchorAt(db, null) : Promise.resolve(anchor), coverage(db)]);
   const generated_at = new Date().toISOString();
-  if (!at) return { window: windowInfo(window, null, null, null), buildings: [], other_tx_count: 0, n: 0, coverage: cov, filters, subsidy_end: subsidyEnd(), generated_at };
+  if (!at) return { window: windowInfo(window, null, null, null), buildings: [], other_tx_count: 0, n: 0, coverage: cov, filters, subsidy_end: subsidyEnd(), district: { ranked_by: "tx_count", source: null, volumes: null }, generated_at };
 
   const r = resolveRange(window, at);
-  const [actions, tokens, firstTs] = await Promise.all([actionStats(db, r, filters), tokenStats(db, r, filters), firstDataTs(db, r)]);
+  // Pons district (PROJECT.md 10.1): live views rank by 24 h USD volume from GeckoTerminal (Phase 6 D2, KL-19). The
+  // candidates are the 30 tokens moved by the most transactions; tokens without market data rank after those with it.
+  // A scrubbed view keeps the transaction ranking, since the market figures are "now".
+  const [actions, candidates, firstTs] = await Promise.all([
+    actionStats(db, r, filters),
+    tokenStats(db, r, filters, undefined, rankByVolume ? 30 : MAX_TOKEN_BUILDINGS),
+    firstDataTs(db, r),
+  ]);
+  const markets = rankByVolume && candidates.length ? await tokenMarkets(candidates.map((t) => t.key)) : null;
+  const volume = (key: string) => markets?.get(key)?.volume_24h_usd ?? null;
+  const tokens = markets
+    ? [...candidates].sort((a, b) => (volume(b.key) ?? -1) - (volume(a.key) ?? -1) || b.tx_count - a.tx_count).slice(0, MAX_TOKEN_BUILDINGS)
+    : candidates.slice(0, MAX_TOKEN_BUILDINGS);
   const byKey = new Map(actions.map((a) => [a.key, a]));
   const raw = r.basis === "txs";
   const buildings: CityBuilding[] = [
@@ -185,6 +198,9 @@ export async function getCity(db: Db, window: CityWindow, anchor?: Date | null, 
     coverage: cov,
     filters,
     subsidy_end: subsidyEnd(),
+    district: markets
+      ? { ranked_by: "volume_24h_usd", source: "GeckoTerminal", volumes: Object.fromEntries(tokens.map((t) => [t.key, volume(t.key)])) }
+      : { ranked_by: "tx_count", source: rankByVolume ? "GeckoTerminal unavailable" : null, volumes: null },
     generated_at,
   };
 }

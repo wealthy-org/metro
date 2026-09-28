@@ -42,6 +42,8 @@ type SceneProps = {
   onSelect: (index: number) => void;
   onHover: (info: HoverInfo) => void;
   onContextLost: () => void;
+  vehicles: VehicleSet | null;
+  vehiclesMoving: boolean;
 };
 
 // Lit-window look of the prototype and the landing hero (PROJECT.md 20, audit A16): each building glows in its own cost
@@ -198,6 +200,83 @@ export function CameraRig({ preset, nonce, reducedMotion }: { preset: CameraPres
   return null;
 }
 
+// Vehicles (PROJECT.md 10.1; prototype buildCity/moveVehicles): one per sampled live transaction, on the roads, color
+// = its fee against the dearest in view, speed following TPS. They move only while `moving` (live data, no reduced
+// motion); otherwise they stand still. The demand frame loop is kept running only while they move.
+export type VehicleSet = { colors: [number, number, number][]; tps: number | null };
+const MAX_VEHICLES = 300;
+
+function Vehicles({ set, moving }: { set: VehicleSet; moving: boolean }) {
+  const mesh = useRef<THREE.InstancedMesh>(null);
+  const invalidate = useThree((s) => s.invalidate);
+  const lanes = useMemo(
+    () =>
+      Array.from({ length: MAX_VEHICLES }, (_, i) => {
+        const r = (n: number) => ((Math.sin(i * 12.9898 + n * 78.233) * 43758.5453) % 1 + 1) % 1;
+        const road = ROADS[Math.floor(r(1) * ROADS.length)] ?? 0;
+        return { horizontal: r(2) < 0.5, lane: road + (r(3) < 0.5 ? -0.25 : 0.25), p: r(4) * 24 - 12, s: (0.4 + r(5) * 0.8) * (r(6) < 0.5 ? 1 : -1) };
+      }),
+    [],
+  );
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const count = Math.min(MAX_VEHICLES, set.colors.length);
+
+  const place = (m: THREE.InstancedMesh) => {
+    for (let i = 0; i < count; i++) {
+      const v = lanes[i];
+      if (!v) continue;
+      if (v.horizontal) {
+        dummy.position.set(v.p, 0.14, v.lane);
+        dummy.rotation.set(0, Math.PI / 2, 0);
+      } else {
+        dummy.position.set(v.lane, 0.14, v.p);
+        dummy.rotation.set(0, 0, 0);
+      }
+      dummy.updateMatrix();
+      m.setMatrixAt(i, dummy.matrix);
+    }
+    m.count = count;
+    m.instanceMatrix.needsUpdate = true;
+  };
+
+  useLayoutEffect(() => {
+    const m = mesh.current;
+    if (!m) return;
+    const c = new THREE.Color();
+    set.colors.slice(0, MAX_VEHICLES).forEach(([r, g, b], i) => m.setColorAt(i, c.setRGB(r, g, b, THREE.SRGBColorSpace)));
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    place(m);
+    invalidate();
+    // place() reads count and lanes, both derived from the set.
+  }, [set, invalidate]);
+
+  useFrame((_, dt) => {
+    const m = mesh.current;
+    if (!m || !moving || count === 0) return;
+    const speed = 0.6 + Math.min(2, (set.tps ?? 0) / 100);
+    for (let i = 0; i < count; i++) {
+      const v = lanes[i];
+      if (!v) continue;
+      v.p += v.s * Math.min(dt, 0.05) * speed * 3;
+      if (v.p > 12) v.p = -12;
+      if (v.p < -12) v.p = 12;
+    }
+    place(m);
+    invalidate();
+  });
+
+  useEffect(() => {
+    if (moving) invalidate();
+  }, [moving, invalidate]);
+
+  return (
+    <instancedMesh ref={mesh} args={[undefined, undefined, MAX_VEHICLES]} raycast={() => null}>
+      <boxGeometry args={[0.32, 0.16, 0.6]} />
+      <meshBasicMaterial />
+    </instancedMesh>
+  );
+}
+
 export function Ground() {
   return (
     <>
@@ -255,6 +334,7 @@ export default function CityScene(props: SceneProps) {
       <hemisphereLight args={["#9fb2d6", "#0b0d12", 0.85 * Math.PI]} />
       <directionalLight position={[-14, 24, 10]} intensity={0.7 * Math.PI} />
       <Ground />
+      {props.vehicles ? <Vehicles set={props.vehicles} moving={props.vehiclesMoving} /> : null}
       <Buildings buildings={props.buildings} heights={props.heights} colors={props.colors} selectedIndex={props.selectedIndex} onSelect={props.onSelect} onHover={props.onHover} />
       {props.selectedIndex >= 0 ? <SelectionOutline index={props.selectedIndex} height={selectedHeight} /> : null}
       {created ? <Labels buildings={props.buildings} heights={props.heights} metric={props.metric} selectedIndex={props.selectedIndex} onSelect={props.onSelect} /> : null}

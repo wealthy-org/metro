@@ -8,6 +8,7 @@ import { dataQuery, isoMinuteDate, metricLabel, toIsoMinute, type ViewState } fr
 import { Segmented } from "../controls/Toolbar.tsx";
 import { usePolling } from "../hooks.ts";
 import { POLL_MS, scopeNote, type Chip, type StageInfo } from "../stage.tsx";
+import { NA } from "../../lib/format.ts";
 
 // Heatmap lens (PROJECT.md 10.5; prototype renderHeatmap and .hm-grid): one cell per UTC hour, one row per UTC day of
 // the window. Color is the metric on the cost scale. Cells without ingested data and cells after the scrubber time
@@ -23,7 +24,7 @@ function Legend({ max, metric }: { max: number | null; metric: HeatmapResponse["
   return (
     <div className="mt-3 flex items-center gap-3 text-[11px] text-mute">
       <span>{metricLabel(metric)}</span>
-      <span className="font-mono">{max !== null ? formatValue(0, metric) : "—"}</span>
+      <span className="font-mono">{max !== null ? formatValue(0, metric) : NA}</span>
       <span className="h-2 w-[180px] rounded-[2px]" style={{ background: `linear-gradient(90deg, ${cssColor(costColor(0))}, ${cssColor(costColor(0.5))}, ${cssColor(costColor(1))})` }} />
       <span className="font-mono">{formatValue(max, metric)}</span>
       <span className="ml-2 inline-block size-3 rounded-[2px]" style={{ background: BLANK }} />

@@ -2,22 +2,26 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CityResponse } from "../../lib/api-types.ts";
-import { buildingHeights, costColor, cssColor, feeScale, formatMetric, metricValue, type CityMetric } from "../../lib/city.ts";
+import type { CityResponse, FlowResponse } from "../../lib/api-types.ts";
+import { buildingHeights, costColor, cssColor, feeScale, feeTop, formatMetric, metricValue, type CityMetric } from "../../lib/city.ts";
 import { dataQuery, metricLabel, type ViewState } from "../../lib/view-state.ts";
+import { samplingText, useBlockSampling } from "../flow/sampling.ts";
 import { usePolling, useReducedMotion } from "../hooks.ts";
 import { hm, POLL_MS, scopeNote, StageChips, StageOverlay, useWebGl, type Chip, type StageInfo } from "../stage.tsx";
 import { CityFallback } from "./CityFallback.tsx";
-import type { HoverInfo } from "./CityScene.tsx";
+import type { HoverInfo, VehicleSet } from "./CityScene.tsx";
 
 // WebGL only exists in the browser; the scene is never rendered on the server.
 const CityScene = dynamic(() => import("./CityScene.tsx"), { ssr: false });
 
 const int = new Intl.NumberFormat("en-US");
+const VEHICLE_POLL_MS = 5_000;
 
 export function CityView({ state, onChange, onInfo, notice }: { state: ViewState; onChange: (patch: Partial<ViewState>) => void; onInfo: (info: StageInfo) => void; notice: Chip | null }) {
   const metric = state.metric as CityMetric;
   const city = usePolling<CityResponse>(`/api/lens/city/data?${dataQuery(state)}`, state.at ? null : POLL_MS);
+  // Vehicles: the newest transactions read live (Phase 6 D3, KL-23), from the Flow endpoint. None when scrubbed.
+  const flow = usePolling<FlowResponse>(state.at ? null : `/api/lens/flow/data?${dataQuery(state)}`, state.at ? null : VEHICLE_POLL_MS);
   const reducedMotion = useReducedMotion();
   const [gl, setGl] = useWebGl();
   const [sceneKey, setSceneKey] = useState(0);
@@ -46,6 +50,16 @@ export function CityView({ state, onChange, onInfo, notice }: { state: ViewState
   const label = metricLabel(metric);
   const hovered = hover ? buildings[hover.index] : undefined;
   const tokenCount = buildings.filter((b) => b.kind === "token").length;
+  const vehicles = useMemo<VehicleSet | null>(() => {
+    const rows = flow.data?.rows;
+    if (state.at || !rows?.length) return null;
+    const sample = rows.slice(0, 300);
+    const top = feeTop(sample.map((r) => r.fee_usd));
+    return { colors: sample.map((r) => costColor(Math.min(1, r.fee_usd / top))), tps: flow.data?.tps ?? null };
+  }, [flow.data, state.at]);
+  const vehiclesMoving = vehicles !== null && !reducedMotion && flow.status !== "error";
+  const sampled = samplingText(useBlockSampling(state.at ? null : flow.data));
+  const byVolume = city.data?.district.ranked_by === "volume_24h_usd";
 
   let overlay: string | null = null;
   if (city.status === "loading" && !city.data) overlay = "Loading the city…";
@@ -75,6 +89,8 @@ export function CityView({ state, onChange, onInfo, notice }: { state: ViewState
           onSelect={select}
           onHover={onHover}
           onContextLost={() => setGl("lost")}
+          vehicles={vehicles}
+          vehiclesMoving={vehiclesMoving}
         />
       ) : null}
 
@@ -141,8 +157,13 @@ export function CityView({ state, onChange, onInfo, notice }: { state: ViewState
         {city.data ? (
           <div className="mt-1.5">
             {tokenCount > 0
-              ? `Back plate: Pons district, the ${tokenCount} Pons token${tokenCount === 1 ? "" : "s"} moved by the most transactions in this window.`
+              ? `Back plate: Pons district, the ${tokenCount} Pons token${tokenCount === 1 ? "" : "s"} with the ${byVolume ? "highest 24 h USD volume (GeckoTerminal)" : "most transactions in this window"}.`
               : "Back plate: Pons district. No Pons token moved in this window."}
+          </div>
+        ) : null}
+        {vehicles && gl === "ok" ? (
+          <div className="mt-1">
+            Vehicles: the {vehicles.colors.length} newest transactions, read live from RPC; color is the fee{vehiclesMoving ? ", speed follows TPS" : ""}.{sampled ? ` ${sampled}.` : ""}
           </div>
         ) : null}
         {metric === "fail_rate" && tokenCount > 0 ? <div className="mt-1">Tokens have no fail rate: failed transactions move no tokens.</div> : null}

@@ -4,7 +4,7 @@
 
 import { CITY_METRICS, CITY_WINDOWS, isCityAction, isCityWindow, RAW_WINDOW_MAX_SECONDS, type CityActionKey, type CityWindow } from "./city.ts";
 
-export const LENS_KEYS = ["city", "terrain", "heatmap"] as const;
+export const LENS_KEYS = ["city", "terrain", "heatmap", "flow", "launchpad"] as const;
 export type LensKey = (typeof LENS_KEYS)[number];
 export const isLensKey = (v: string): v is LensKey => (LENS_KEYS as readonly string[]).includes(v);
 
@@ -110,6 +110,8 @@ export function ethToWei(eth: string): string {
 // Why a metric cannot be shown by a lens at a window; null when it can.
 export function metricIssue(lens: LensKey, metric: Metric, window: CityWindow): string | null {
   const short = isShortWindow(window);
+  // Flow colors by fee and Launchpad sorts by column: the Metric choice does not apply to them.
+  if (lens === "flow" || lens === "launchpad") return null;
   if (metric === "gas_price") return lens === "heatmap" ? null : "Gas price is chain-wide; it is shown in the Heatmap";
   if (lens === "heatmap" && (metric === "wallets" || metric === "fail_rate")) return "Not available per hour cell: the hourly rollups have no distinct wallets or failures";
   if (metric === "wallets" && !short) return "Wallets are counted for windows of 24 h or less";
@@ -120,12 +122,14 @@ export function metricIssue(lens: LensKey, metric: Metric, window: CityWindow): 
 // Token, value, wallet and status need raw rows (KL-20); the action filter works at every window.
 export const rawFilterCount = (f: Filters) => [f.token, f.minValue, f.wallet, f.status].filter((x) => x !== null).length;
 export const RAW_FILTER_REASON = "Token, value, wallet and status filters apply to windows of 24 h or less";
+// Flow reads raw rows of the newest blocks and has no window (gate F31), so every filter applies there.
+export const rawFiltersAllowed = (s: Pick<ViewState, "lens" | "window">) => s.lens === "flow" || isShortWindow(s.window);
 
 // Drops anything the current lens and window cannot show, so parse(serialize(s)) is stable.
 export function normalize(s: ViewState): ViewState {
   const short = isShortWindow(s.window);
   const metric = metricIssue(s.lens, s.metric, s.window) ? "tx_count" : s.metric;
-  const filters: Filters = short ? s.filters : { ...NO_FILTERS, action: s.filters.action };
+  const filters: Filters = rawFiltersAllowed(s) ? s.filters : { ...NO_FILTERS, action: s.filters.action };
   const rows: TerrainRows = short ? s.rows : "actions";
   return { ...s, metric, filters, rows };
 }
@@ -201,7 +205,8 @@ export function serializeViewState(s: ViewState, includeLens = true): URLSearchP
 // Query string for the lens and Inspector APIs: only what changes the numbers.
 export function dataQuery(s: ViewState, extra: Record<string, string> = {}): string {
   const n = normalize(s);
-  const p = new URLSearchParams({ window: n.window, ...extra });
+  // The Flow API ignores the window; 1h keeps the raw filters valid under the shared parser (gate F31).
+  const p = new URLSearchParams({ window: n.lens === "flow" ? "1h" : n.window, ...extra });
   if (n.filters.action) p.set("action", n.filters.action);
   if (n.filters.token) p.set("token", n.filters.token);
   if (n.filters.minValue) p.set("min_value", n.filters.minValue);

@@ -118,7 +118,8 @@ export async function fetchBlockBundle(client: RpcClient, prices: PriceSource, n
         });
       }
       if (log.address === PONS_FACTORY && topic0 === TOPIC_TOKEN_LAUNCHED) {
-        // topic1 is the token and topic3 the creator (checked against tx.from on 2026-09-27).
+        // topic1 is the token and topic3 the launching account: tx.from for an EOA, or the smart account a relayer or
+        // bundler sent the transaction for (KL-13, scripts/verify-pons-launches.ts: 217 of 217 on 2026-09-28).
         const token = topicAddress(log.topics[1]);
         const creator = topicAddress(log.topics[3]);
         if (!token || !creator) continue;

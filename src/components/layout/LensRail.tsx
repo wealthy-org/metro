@@ -9,10 +9,10 @@ export type RailLens = { key: string; label: string; path: string; ready: boolea
 export const RAIL_LENSES: RailLens[] = [
   { key: "city", label: "City", path: "M3 21V11h5v10M8 21V4h8v17M16 21v-8h5v8M2 21h20", ready: true },
   { key: "terrain", label: "Terrain", path: "M2 20l6-11 4 6 3-4 7 9z", ready: true },
-  { key: "flow", label: "Flow", path: "M3 6h12M3 12h18M3 18h9M15 3l4 3-4 3M17 9l4 3-4 3", ready: false },
+  { key: "flow", label: "Flow", path: "M3 6h12M3 12h18M3 18h9M15 3l4 3-4 3M17 9l4 3-4 3", ready: true },
   { key: "graph", label: "Graph", path: "", ready: false },
   { key: "heatmap", label: "Heatmap", path: "M3 3h6v6H3zM15 3h6v6h-6zM9 9h6v6H9zM3 15h6v6H3zM15 15h6v6h-6z", ready: true },
-  { key: "launchpad", label: "Launchpad", path: "M4 21V3M4 4h13l-3 4 3 4H4", ready: false },
+  { key: "launchpad", label: "Launchpad", path: "M4 21V3M4 4h13l-3 4 3 4H4", ready: true },
   { key: "split", label: "Split", path: "M3 4h8v16H3zM13 4h8v16h-8z", ready: false },
 ];
 

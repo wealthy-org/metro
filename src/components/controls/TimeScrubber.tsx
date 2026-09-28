@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Coverage } from "../../lib/api-types.ts";
 import { isoMinuteDate, toIsoMinute } from "../../lib/view-state.ts";
 import { Segmented } from "./Toolbar.tsx";
+import { NA } from "../../lib/format.ts";
 
 // Time scrubber (PROJECT.md 11.3; prototype lines 108 to 115 and 246 to 253). The track runs from the first to the
 // newest ingested block. Moving the thumb sets the view time `at`; the right end is live (at = null). Play advances
@@ -102,11 +103,11 @@ export function TimeScrubber({
       </button>
       <div className="min-w-0 flex-1">
         <div className="mb-0.5 flex justify-between gap-3 font-mono text-[11px] text-mute">
-          <span className="whitespace-nowrap">{track ? label(track.start) : "—"}</span>
+          <span className="whitespace-nowrap">{track ? label(track.start) : NA}</span>
           <span className="truncate text-center" title={cliffText}>
             {cliffText}
           </span>
-          <span className="whitespace-nowrap">{track ? label(track.last) : "—"}</span>
+          <span className="whitespace-nowrap">{track ? label(track.last) : NA}</span>
         </div>
         <div className="relative">
           <input

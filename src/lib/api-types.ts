@@ -29,6 +29,9 @@ export type CityResponse = {
   filters: Filters;
   // SUBSIDY_END_DATE (PROJECT.md 23) as an ISO instant, for the scrubber marker.
   subsidy_end: string;
+  // How the Pons district is chosen (KL-19, Phase 6 D2): 24 h USD volume from GeckoTerminal in live views, transaction
+  // count when scrubbed or when GeckoTerminal cannot be reached. volumes: USD per district token, null when unknown.
+  district: { ranked_by: "volume_24h_usd" | "tx_count"; source: string | null; volumes: Record<string, number | null> | null };
   generated_at: string;
 };
 
@@ -53,6 +56,87 @@ export type TerrainResponse = {
 };
 
 export type HeatmapHours = { values: (number | null)[]; n: number[]; days: number };
+
+// Holders from token_transfers (Phase 6 D1). complete: every block from launch to the anchor is ingested.
+// top10_share leaves out the token's Pons curve pool and the factory (`excluded`), whose part is pool_share (KL-25).
+export type HolderStatsT = {
+  holders: number;
+  holders_24h_ago: number;
+  top10_share: number | null;
+  pool_share: number | null;
+  excluded: string[];
+  complete: boolean;
+  blocks_ingested: number | null;
+  blocks_expected: number | null;
+  basis: "token_transfers";
+};
+export type PoolMarketT = { address: string; name: string; dex: string | null; volume_24h_usd: number | null; reserve_usd: number | null };
+// GeckoTerminal figures are "now", whatever the window or scrubber time (Phase 6 D2).
+export type TokenMarketT = { price_usd: number | null; volume_24h_usd: number | null; pools: PoolMarketT[] };
+
+// source "rpc": a launch read from the factory logs that is not ingested yet (KL-24); its activity and holders are
+// unknown (null), not zero. market_checked: false when GeckoTerminal was not asked (one call of 30 per view).
+export type LaunchpadToken = {
+  address: string;
+  source: "ingested" | "rpc";
+  symbol: string | null;
+  name: string | null;
+  launch_block: number;
+  launch_ts: string;
+  creator: string;
+  tx_count: number | null;
+  swaps: number | null;
+  avg_fee_usd: number | null;
+  daily: { date: string; n: number }[];
+  holders: HolderStatsT | null;
+  market: TokenMarketT | null;
+  market_checked: boolean;
+  concentrated: boolean;
+};
+
+// GET /api/lens/launchpad/data (PROJECT.md 10.6, 18). recent: the RPC read of the newest launches (live views only).
+export type LaunchpadResponse = {
+  window: CityWindowInfo;
+  tokens: LaunchpadToken[];
+  recent: { source: "rpc"; available: boolean } | null;
+  market: { source: "GeckoTerminal"; available: boolean };
+  highlights: { fastest: string | null; concentrated: string[] };
+  n: number;
+  coverage: Coverage;
+  filters: Filters;
+  subsidy_end: string;
+  generated_at: string;
+};
+
+// GET /api/lens/flow/data (PROJECT.md 10.3, 18). source "rpc": the newest blocks read live from RPC (KL-23);
+// "ingested": the newest ingested blocks at or before the scrubber time.
+export type FlowRowT = {
+  hash: string;
+  block: number;
+  ts: string;
+  from: string;
+  to: string | null;
+  action: string;
+  tokens: string[];
+  fee_usd: number;
+  value_wei: string;
+  value_eth: number;
+  status: "success" | "failed";
+  subsidy_class: string;
+};
+export type FlowResponse = {
+  source: "rpc" | "ingested";
+  window: { start: string | null; end: string | null };
+  blocks: { first: number; last: number } | null;
+  tps: number | null;
+  n_total: number;
+  rows: FlowRowT[];
+  tokens: { key: string; label: string }[];
+  coverage: Coverage;
+  filters: Filters;
+  subsidy_end: string;
+  generated_at: string;
+};
 
 // GET /api/lens/heatmap/data (PROJECT.md 10.5, 18). cells[d][h] is UTC day days[d], hour h.
 export type HeatmapResponse = {
@@ -118,4 +202,69 @@ export type StatsResponse = {
   // Blockscout /api/v2/stats, refreshed every 5 minutes (PROJECT.md 8.1); unavailable while KL-3 holds.
   chain_stats: ChainStats;
   generated_at: string;
+};
+
+// /token/[address] and GET /api/v1/tokens/{address} (PROJECT.md 15, 16). Activity covers the ingested blocks only.
+export type TokenProfile = {
+  address: string;
+  name: string | null;
+  symbol: string | null;
+  decimals: number;
+  is_pons: boolean;
+  // source "rpc": a launch newer than the ingested blocks, from the factory logs (KL-24).
+  launch: { block: number; ts: string; creator: string; creator_url: string; source: "ingested" | "rpc" } | null;
+  supply: { raw: string; formatted: string; source: "rpc" } | null;
+  holders: HolderStatsT | null;
+  market: TokenMarketT | null;
+  market_available: boolean;
+  daily: { date: string; n: number; avg_fee_usd: number | null }[];
+  transfers: { tx_hash: string; from: string; to: string; amount: string; ts: string }[];
+  anchor: string | null;
+  generated_at: string;
+};
+
+// /wallet/[address] (PROJECT.md 15). `ingested` covers the ingested blocks only; `chain` is read from RPC.
+export type WalletProfile = {
+  address: string;
+  explorer_url: string;
+  chain: { balance_eth: string; sent_total: number; is_contract: boolean; source: "rpc" } | null;
+  ingested: {
+    first_seen: string | null;
+    last_seen: string | null;
+    tx_count: number;
+    sent: number;
+    fee_paid_usd: number | null;
+    paid_share: number | null;
+    fail_rate: number | null;
+    actions: { key: string; label: string; tx_count: number; fee_usd: number | null }[];
+    hours: number[];
+    counterparties: { sent_to: { address: string; tx_count: number }[]; received_from: { address: string; tx_count: number }[] };
+    recent: { hash: string; block: number; ts: string; action: string; fee_usd: number; status: "success" | "failed"; direction: "in" | "out" }[];
+  };
+  generated_at: string;
+};
+
+// /tx/[hash] (PROJECT.md 7). source "rpc": not ingested; classification computed on the fly. fee_usd_basis: "minute"
+// is the stored ETH price of its minute, "current" the live quote Flow uses for transactions not yet ingested.
+export type TxDetail = {
+  hash: string;
+  source: "ingested" | "rpc";
+  block: number;
+  ts: string;
+  from: string;
+  to: string | null;
+  value_eth: string;
+  gas_used: string;
+  gas_price_wei: string;
+  fee_eth: string;
+  fee_usd: number | null;
+  fee_usd_basis: "minute" | "current" | null;
+  status: "success" | "failed";
+  method: string | null;
+  action: string;
+  action_label: string;
+  subsidy_class: string;
+  transfers: { log_index: number; token: string; symbol: string | null; is_pons: boolean; from: string; to: string; amount: string; amount_is_raw: boolean }[];
+  positions: { lens: string; href: string }[];
+  explorer_url: string;
 };

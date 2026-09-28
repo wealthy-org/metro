@@ -42,6 +42,8 @@ export type BlockscoutOptions = {
   fetch?: Fetch;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  // Service name in error messages; the same guard layer serves GeckoTerminal (Phase 6 D2).
+  name?: string;
 };
 
 export type GetOptions = {
@@ -69,6 +71,7 @@ export class Blockscout {
   private readonly fetchFn: Fetch;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly name: string;
   private readonly cache = new Map<string, { value: unknown; at: number }>();
   private readonly inflight = new Map<string, Promise<unknown>>();
   private openUntil = 0;
@@ -80,6 +83,7 @@ export class Blockscout {
     this.fetchFn = opts.fetch ?? limitedFetch("blockscout", RATE_PER_SECOND);
     this.now = opts.now ?? Date.now;
     this.sleep = opts.sleep ?? realSleep;
+    this.name = opts.name ?? "Blockscout";
   }
 
   // True while the breaker is open.
@@ -128,7 +132,7 @@ export class Blockscout {
       try {
         res = await this.fetchFn(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(TIMEOUT_MS) });
       } catch (err) {
-        lastProblem = `Blockscout unreachable: ${err instanceof Error ? err.name : "error"}`;
+        lastProblem = `${this.name} unreachable: ${err instanceof Error ? err.name : "error"}`;
         if (attempt < RETRIES) await this.sleep(backoff);
         continue;
       }
@@ -137,24 +141,24 @@ export class Blockscout {
       const reset = headerNumber(res, "x-ratelimit-reset");
       if (remaining !== null && remaining <= 1 && reset !== null) this.pauseUntil = this.now() + Math.min(reset, MAX_WAIT_MS);
 
-      if (isBlocked(res)) this.trip(`Blockscout blocked the request (HTTP ${res.status})`, url);
+      if (isBlocked(res)) this.trip(`${this.name} blocked the request (HTTP ${res.status})`, url);
       if (res.status === 429 || res.status >= 500) {
-        lastProblem = `Blockscout HTTP ${res.status}`;
+        lastProblem = `${this.name} HTTP ${res.status}`;
         const retryAfter = headerNumber(res, "retry-after");
         const delay = res.status === 429 ? (retryAfter !== null ? retryAfter * 1000 : (reset ?? backoff)) : backoff;
         if (attempt < RETRIES) await this.sleep(Math.min(delay, MAX_WAIT_MS));
         continue;
       }
       // A normal HTTP error (404, 422) is a real answer about this request, not about the service.
-      if (!res.ok) throw new BlockscoutError(`Blockscout HTTP ${res.status} for ${path}`);
+      if (!res.ok) throw new BlockscoutError(`${this.name} HTTP ${res.status} for ${path}`);
 
       const body: unknown = await res.json().catch(() => undefined);
-      if (body === undefined) this.trip("Blockscout returned a non-JSON answer", url);
-      if (validate && !validate(body)) throw new BlockscoutError(`Blockscout answer for ${path} has an unexpected shape`);
+      if (body === undefined) this.trip(`${this.name} returned a non-JSON answer`, url);
+      if (validate && !validate(body)) throw new BlockscoutError(`${this.name} answer for ${path} has an unexpected shape`);
       this.remember(url, body);
       return body;
     }
-    this.trip(lastProblem || "Blockscout failed", url);
+    this.trip(lastProblem || `${this.name} failed`, url);
   }
 }
 
