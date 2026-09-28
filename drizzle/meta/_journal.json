@@ -43,6 +43,13 @@
       "when": 1790562040374,
       "tag": "0005_tokens_nullable_figures",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790586146112,
+      "tag": "0006_facts_insights",
+      "breakpoints": true
     }
   ]
 }

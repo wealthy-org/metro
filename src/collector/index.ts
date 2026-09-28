@@ -1,12 +1,26 @@
 import { eq } from "drizzle-orm";
-import { createDb } from "../db/client.ts";
+import { createDb, type Db } from "../db/client.ts";
 import { ingestCursor } from "../db/schema.ts";
+import { runEngine } from "../engine/run.ts";
 import { fetchBlockBundle } from "./ingest.ts";
 import { log } from "./log.ts";
 import { PriceFeed } from "./price.ts";
 import { RpcPool } from "./rpc.ts";
 import { Rollups } from "./rollup.ts";
 import { recordError, syncKnownContracts, writeBatch } from "./writer.ts";
+
+// PROJECT.md 13.2: insights are recomputed every 10 minutes by the Collector (Phase 7 D1). In the loop the engine
+// runs in the background, so ingest never waits for it (gate F47); day rollups are already flushed every 5 minutes
+// by afterBatch. At shutdown the day rollups are flushed first and the run is awaited.
+const ENGINE_INTERVAL_MS = 10 * 60_000;
+
+async function runEngineLogged(db: Db): Promise<void> {
+  try {
+    await runEngine(db);
+  } catch (err) {
+    log("error", "insight engine failed", { error: err instanceof Error ? err.message : String(err) });
+  }
+}
 
 type Options = { maxBlocks: number | null; startBlock: bigint | null; batch: number; cursor: string };
 
@@ -52,6 +66,9 @@ async function main() {
   let next = opts.startBlock ?? (saved ? BigInt(saved.block) + 1n : await rpc.head.getBlockNumber());
   let processed = 0;
   let failures = 0;
+  // The first run happens after the first ten minutes of batches; a bounded run gets one more at shutdown below.
+  let lastEngine = Date.now();
+  let engineRun: Promise<void> | null = null;
   log("info", "collector started", {
     cursor: opts.startBlock === null ? opts.cursor : "none (manual range, cursor untouched)",
     from: next,
@@ -95,6 +112,12 @@ async function main() {
       processed += numbers.length;
       next = last + 1n;
       failures = 0;
+      if (engineRun === null && Date.now() - lastEngine >= ENGINE_INTERVAL_MS) {
+        lastEngine = Date.now();
+        engineRun = runEngineLogged(db).finally(() => {
+          engineRun = null;
+        });
+      }
     } catch (err) {
       failures++;
       const message = err instanceof Error ? err.message : String(err);
@@ -104,7 +127,10 @@ async function main() {
     }
   }
 
+  // Leaves the insights fresh for the blocks this run wrote, also for short bounded runs (KL-1, KL-26).
+  if (engineRun) await engineRun;
   await rollups.flushDays().catch((err: unknown) => log("error", "day rollup failed", { error: err instanceof Error ? err.message : String(err) }));
+  if (processed > 0) await runEngineLogged(db);
   log("info", "collector stopped", { processed, next });
   prices.stop();
   await pool.end();

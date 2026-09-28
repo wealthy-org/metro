@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import type { InspectorResponse } from "../../lib/api-types.ts";
+import { useEffect, useState, type KeyboardEvent } from "react";
+import type { InsightsResponse, InsightT, InspectorResponse } from "../../lib/api-types.ts";
 import { CITY_WINDOWS, formatMetric } from "../../lib/city.ts";
 import { formatAge, NA, shortHex as shortHash, utcMinute as utc } from "../../lib/format.ts";
+import { relatedTo } from "../../lib/insight-match.ts";
 import { dataQuery, filterSummary, type ViewState } from "../../lib/view-state.ts";
 import { usePolling } from "../hooks.ts";
+import { InsightCard } from "../insights/InsightCard.tsx";
 
 const POLL_MS = 15_000;
 const int = new Intl.NumberFormat("en-US");
@@ -65,7 +68,7 @@ function Kv({ rows }: { rows: [string, string][] }) {
 
 const H4 = ({ children }: { children: string }) => <h4 className="mt-4 mb-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-mute">{children}</h4>;
 
-function Details({ d, onClear }: { d: InspectorResponse; onClear: () => void }) {
+function Details({ d, onClear, related }: { d: InspectorResponse; onClear: () => void; related: InsightT[] | null }) {
   const v = d.values;
   const change = d.previous?.change;
   const changeText =
@@ -89,6 +92,7 @@ function Details({ d, onClear }: { d: InspectorResponse; onClear: () => void }) 
           ["Wallets", v.wallets === null ? "24 h or less only" : int.format(v.wallets)],
           ["Gas volume", formatMetric(v.gas_volume, "gas_volume")],
           ["Avg fee (blended)", formatMetric(v.avg_fee_usd, "avg_fee_usd")],
+          ["Median fee", v.median_fee_usd === null ? (v.tx_count ? "24 h or less only" : NA) : formatMetric(v.median_fee_usd, "avg_fee_usd")],
           ["Paid share (estimate)", v.paid_share === null ? NA : `${Math.round(v.paid_share * 100)}%`],
           ["Fail rate", d.kind === "token" ? "n/a for tokens" : formatMetric(v.fail_rate, "fail_rate")],
           [d.kind === "hour" ? "Change vs previous hour" : "Change vs previous window", changeText],
@@ -164,7 +168,13 @@ function Details({ d, onClear }: { d: InspectorResponse; onClear: () => void }) 
       )}
 
       <H4>Insights</H4>
-      <p className="text-[12px] text-mute">Coming soon: insights that mention this {d.kind === "hour" ? "hour" : "object"} appear here once the insight rules run.</p>
+      {related === null ? (
+        <p className="text-[12px] text-mute">Loading insights…</p>
+      ) : related.length ? (
+        related.map((i) => <InsightCard key={i.id} insight={i} compact />)
+      ) : (
+        <p className="text-[12px] text-mute">No active finding mentions this {d.kind === "hour" ? "hour" : d.kind === "token" ? "token" : "action type"}.</p>
+      )}
 
       <div className="mt-4 flex gap-2">
         <button type="button" disabled title="Surveyor: coming soon" className="cursor-not-allowed rounded-[3px] border border-line bg-panel2 px-[11px] py-[7px] text-[12px] text-mute">
@@ -178,7 +188,7 @@ function Details({ d, onClear }: { d: InspectorResponse; onClear: () => void }) 
   );
 }
 
-function InspectorPane({ state, onClear }: { state: ViewState; onClear: () => void }) {
+function InspectorPane({ state, onClear, insights }: { state: ViewState; onClear: () => void; insights: InsightT[] | null }) {
   const selected = state.sel;
   const url = selected ? `/api/inspector?${dataQuery(state, { kind: selected.kind, key: selected.key })}` : null;
   const insp = usePolling<InspectorResponse>(url, state.at ? null : POLL_MS);
@@ -209,45 +219,110 @@ function InspectorPane({ state, onClear }: { state: ViewState; onClear: () => vo
           Updating…
         </p>
       ) : null}
-      <Details d={d} onClear={onClear} />
+      <Details d={d} onClear={onClear} related={insights === null ? null : relatedTo(insights.filter((i) => i.status === "finding"), { kind: d.kind, key: d.key })} />
+    </>
+  );
+}
+
+// Insights tab (PROJECT.md 7, 13.2): findings first, then "not enough data" rows, each with n, window and evidence.
+function InsightsPane({ data, status }: { data: InsightsResponse | null; status: "loading" | "ok" | "error" }) {
+  const findings = data?.insights.filter((i) => i.status === "finding") ?? [];
+  const low = data?.insights.filter((i) => i.status === "not_enough_data") ?? [];
+  return (
+    <>
+      <h3 className="mb-1 font-display text-[22px] font-bold tracking-[0.01em]">Insights</h3>
+      <p className="mb-3 text-[12px] text-mute">
+        Rule-based findings from the Ledger of Facts. Each states its sample and window; under {data?.min_sample ?? 30} samples a rule shows &quot;not enough data&quot;.{" "}
+        <a href="/methodology" className="text-text underline decoration-mute underline-offset-2 hover:decoration-text">
+          How they are computed
+        </a>
+      </p>
+      {status === "loading" && !data ? <p role="status" className="text-mute">Loading insights…</p> : null}
+      {status === "error" && !data ? <p role="status" className="text-c2">Insights are unavailable. Retrying every minute.</p> : null}
+      {data && !data.insights.length ? <p className="text-mute">No insight has been computed yet. The rules run with the Collector and once a day.</p> : null}
+      {findings.map((i) => (
+        <InsightCard key={i.id} insight={i} />
+      ))}
+      {low.length ? <H4>Not enough data yet</H4> : null}
+      {low.map((i) => (
+        <InsightCard key={i.id} insight={i} compact />
+      ))}
+      {data?.insights.length ? (
+        <p className="mt-2 text-[11px] text-mute">
+          Computed {data.computed_at ? utc(data.computed_at) : NA}.{" "}
+          <a href="/insights" className="text-text underline decoration-mute underline-offset-2 hover:decoration-text">
+            All insights
+          </a>
+        </p>
+      ) : null}
     </>
   );
 }
 
 const TABS = [
   { key: "inspector", label: "Inspector", ready: true },
-  { key: "insights", label: "Insights", ready: false },
+  { key: "insights", label: "Insights", ready: true },
   { key: "surveyor", label: "Surveyor", ready: false },
   { key: "dispatch", label: "Dispatch", ready: false },
 ] as const;
+type TabKey = (typeof TABS)[number]["key"];
+
+const INSIGHTS_POLL_MS = 60_000;
 
 export function WorkspacePanel({ state, onClear }: { state: ViewState; onClear: () => void }) {
+  const [tab, setTab] = useState<TabKey>("inspector");
+  const ins = usePolling<InsightsResponse>("/api/v1/insights", INSIGHTS_POLL_MS);
+  // Selecting an object shows it, whichever tab was open (prototype select(): showTab('insp')).
+  const selKey = state.sel ? `${state.sel.kind}:${state.sel.key}` : null;
+  useEffect(() => {
+    if (selKey) setTab("inspector");
+  }, [selKey]);
+  const ready = TABS.filter((t) => t.ready).map((t) => t.key as TabKey);
+  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    e.preventDefault();
+    const i = ready.indexOf(tab);
+    const next = ready[(i + (e.key === "ArrowRight" ? 1 : ready.length - 1)) % ready.length] ?? "inspector";
+    setTab(next);
+    document.getElementById(`panel-tab-${next}`)?.focus();
+  };
   return (
     <aside className="grid min-h-0 grid-rows-[44px_1fr] border-l border-line bg-panel" aria-label="Workspace">
-      <div className="flex border-b border-line" role="tablist" aria-label="Workspace panels">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            id={`panel-tab-${t.key}`}
-            type="button"
-            role="tab"
-            aria-selected={t.key === "inspector"}
-            aria-controls={t.ready ? `panel-${t.key}` : undefined}
-            aria-disabled={!t.ready || undefined}
-            disabled={!t.ready}
-            title={t.ready ? undefined : `${t.label}: coming soon`}
-            className={`flex flex-1 flex-col items-center justify-center border-b-2 text-[12px] uppercase tracking-[0.06em] ${
-              t.key === "inspector" ? "border-accent text-text" : "cursor-not-allowed border-transparent text-mute/60"
-            }`}
-          >
-            {t.label}
-            {t.ready ? null : <span className="text-[9px] leading-none tracking-[0.08em] text-mute">soon</span>}
-          </button>
-        ))}
+      <div className="flex border-b border-line" role="tablist" aria-label="Workspace panels" onKeyDown={onKey}>
+        {TABS.map((t) => {
+          const on = t.key === tab;
+          return (
+            <button
+              key={t.key}
+              id={`panel-tab-${t.key}`}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              aria-controls={t.ready ? `panel-${t.key}` : undefined}
+              aria-disabled={!t.ready || undefined}
+              disabled={!t.ready}
+              tabIndex={on ? 0 : -1}
+              onClick={() => t.ready && setTab(t.key)}
+              title={t.ready ? undefined : `${t.label}: coming soon`}
+              className={`flex flex-1 flex-col items-center justify-center border-b-2 text-[12px] uppercase tracking-[0.06em] ${
+                on ? "border-accent text-text" : t.ready ? "border-transparent text-mute hover:text-text" : "cursor-not-allowed border-transparent text-mute/60"
+              }`}
+            >
+              {t.label}
+              {t.ready ? null : <span className="text-[9px] leading-none tracking-[0.08em] text-mute">soon</span>}
+            </button>
+          );
+        })}
       </div>
-      <section id="panel-inspector" role="tabpanel" aria-labelledby="panel-tab-inspector" className="min-h-0 overflow-auto p-4">
-        <InspectorPane state={state} onClear={onClear} />
-      </section>
+      {tab === "inspector" ? (
+        <section id="panel-inspector" role="tabpanel" aria-labelledby="panel-tab-inspector" className="min-h-0 overflow-auto p-4">
+          <InspectorPane state={state} onClear={onClear} insights={ins.data?.insights ?? (ins.status === "error" ? [] : null)} />
+        </section>
+      ) : (
+        <section id="panel-insights" role="tabpanel" aria-labelledby="panel-tab-insights" className="min-h-0 overflow-auto p-4">
+          <InsightsPane data={ins.data} status={ins.status === "error" ? "error" : ins.data ? "ok" : "loading"} />
+        </section>
+      )}
     </aside>
   );
 }

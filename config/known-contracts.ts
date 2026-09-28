@@ -60,6 +60,9 @@ export const TOPIC_TOKEN_LAUNCHED = "0x8d4aad4953d0ca700d468f3753aa14432d1b35b43
 
 // Nitro precompile for L2 -> L1 withdrawals (withdrawEth, sendTxToL1); eth_getCode returns 0xfe.
 export const ARBSYS = "0x0000000000000000000000000000000000000064";
+// Sender of the ArbOS internal transaction every block carries (type 0x6a; KL-7). A system address, not a wallet:
+// the dominant-wallet insight leaves it out (Phase 7).
+export const ARBOS_SENDER = "0x00000000000000000000000000000000000a4b05";
 // Nitro deposit (0x64) and retryable-submission (0x69) transaction types, both L1 -> L2 bridge traffic.
 // Defined by the Nitro protocol; none appeared in the 120-block sample, so this rule is not yet observed on 4663.
 export const BRIDGE_TX_TYPES = new Set(["0x64", "0x69"]);

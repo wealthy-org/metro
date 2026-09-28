@@ -298,6 +298,24 @@ async function hourStats(db: Db, r: Range, f: Filters): Promise<{ total: Stats |
   };
 }
 
+// Median fee of the Inspector's subject (Phase 7 D2): the figure the cheapest-hour and cost-ranking insights cite
+// (PROJECT.md 13.2), from raw rows, so only for windows of 24 h or less and single hours (KL-17). percentile_disc(0.5)
+// as in the rollups and the Ticker: an actual fee, the lower middle one for even counts.
+export async function medianFee(db: Db, r: Range, f: Filters, subject: { kind: "action" | "token" | "hour"; key: string }): Promise<number | null> {
+  if (r.basis !== "txs" || r.start === null) return null;
+  const only = subject.kind === "action" ? sql`AND t.action = ${subject.key}` : sql``;
+  const out =
+    subject.kind === "token"
+      ? await cachedRows(db, `median|${rangeKey(r)}|token|${subject.key}|${filterKey(f)}`, sql`
+          WITH moved AS (SELECT DISTINCT tx_hash, ts FROM token_transfers tt WHERE tt.token_address = ${subject.key} AND ${txTime(r, sql`tt.ts`)})
+          SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY t.fee_usd) AS m
+          FROM moved m JOIN txs t ON t.hash = m.tx_hash AND t.ts = m.ts WHERE true ${txFilter({ ...f, token: null }, "t")}`)
+      : await cachedRows(db, `median|${rangeKey(r)}|${subject.kind}|${subject.key}|${filterKey(f)}`, sql`
+          SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY t.fee_usd) AS m
+          FROM txs t WHERE ${txTime(r, sql`t.ts`)} ${only} ${txFilter(f, "t")}`);
+  return numOrNull(out[0]?.m);
+}
+
 // Returns null when a token address is not a known Pons token.
 export async function getInspector(db: Db, p: InspectorParams, anchor?: Date | null): Promise<InspectorResponse | null> {
   let token: InspectorResponse["token"] = null;
@@ -320,7 +338,7 @@ export async function getInspector(db: Db, p: InspectorParams, anchor?: Date | n
   const label = p.kind === "action" ? actionLabel(p.key) : p.kind === "hour" ? hourLabel(p.key) : tokenLabel({ key: p.key, symbol: token?.symbol ?? null });
   const at = anchor === undefined ? await anchorAt(db, p.at) : anchor;
   const base = { kind: p.kind, key: p.key, label, filters: p.filters, token, breakdown: null };
-  const empty = { tx_count: 0, gas_volume: 0, avg_fee_usd: null, wallets: null, fail_rate: null, paid_share: null };
+  const empty = { tx_count: 0, gas_volume: 0, avg_fee_usd: null, median_fee_usd: null, wallets: null, fail_rate: null, paid_share: null };
   if (!at) {
     return { ...base, window: windowInfo(p.window, null, null, null), values: empty, previous: null, trend: { bucket: "1h", points: [] }, samples: [], generated_at: new Date().toISOString() };
   }
@@ -329,7 +347,7 @@ export async function getInspector(db: Db, p: InspectorParams, anchor?: Date | n
     const start = isoMinuteDate(p.key);
     const r: Range = { basis: "txs", start, end: new Date(start.getTime() + HOUR_MS), startDay: null, endDay: isoDay(start) };
     const prev: Range = { ...r, start: new Date(start.getTime() - HOUR_MS), end: start };
-    const [now, before, tr, sm] = await Promise.all([hourStats(db, r, p.filters), hourStats(db, prev, p.filters), trend(db, p, r), samples(db, p, r)]);
+    const [now, before, tr, sm, median] = await Promise.all([hourStats(db, r, p.filters), hourStats(db, prev, p.filters), trend(db, p, r), samples(db, p, r), medianFee(db, r, p.filters, { kind: "hour", key: p.key })]);
     const n = now.total?.tx_count ?? 0;
     const prevN = before.total?.tx_count ?? 0;
     // A running hour ends at the anchor block; an hour after the anchor has no data yet and ends where it starts.
@@ -341,6 +359,7 @@ export async function getInspector(db: Db, p: InspectorParams, anchor?: Date | n
         tx_count: n,
         gas_volume: now.total?.gas_volume ?? 0,
         avg_fee_usd: now.total?.avg_fee_usd ?? null,
+        median_fee_usd: median,
         wallets: now.total?.wallets ?? 0,
         fail_rate: failRate(now.total),
         paid_share: paidShare(now.total),
@@ -359,12 +378,13 @@ export async function getInspector(db: Db, p: InspectorParams, anchor?: Date | n
   const prev = previousRange(r);
   const stats = (range: Range, withRaw: boolean) =>
     p.kind === "action" ? actionStats(db, range, p.filters, p.key, withRaw) : tokenStats(db, range, p.filters, p.key, 1);
-  const [[now], prevStats, tr, sm, firstTs] = await Promise.all([
+  const [[now], prevStats, tr, sm, firstTs, median] = await Promise.all([
     stats(r, true),
     prev ? stats(prev, false) : Promise.resolve(null),
     trend(db, p, r),
     samples(db, p, r),
     firstDataTs(db, r),
+    medianFee(db, r, p.filters, { kind: p.kind, key: p.key }),
   ]);
   const prevN = prevStats ? (prevStats[0]?.tx_count ?? 0) : null;
   const n = now?.tx_count ?? 0;
@@ -375,6 +395,7 @@ export async function getInspector(db: Db, p: InspectorParams, anchor?: Date | n
       tx_count: n,
       gas_volume: now?.gas_volume ?? 0,
       avg_fee_usd: now?.avg_fee_usd ?? null,
+      median_fee_usd: median,
       wallets: r.basis === "txs" ? (now?.wallets ?? 0) : null,
       fail_rate: p.kind === "action" ? failRate(now) : null,
       paid_share: paidShare(now),

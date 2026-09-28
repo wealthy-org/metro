@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { CityResponse, FlowResponse, HeatmapResponse, LaunchpadResponse, TerrainResponse } from "../../lib/api-types.ts";
+import type { CityResponse, FlowResponse, HeatmapResponse, InsightsResponse, LaunchpadResponse, TerrainResponse } from "../../lib/api-types.ts";
 import { CITY_ACTIONS, costColor, cssColor, feeTop } from "../../lib/city.ts";
 import { formatAge, NA } from "../../lib/format.ts";
 import { timeLabel } from "../../lib/lenses.ts";
@@ -186,6 +186,46 @@ function LaunchArt({ d }: { d: LaunchpadResponse | null }) {
         );
       })}
     </svg>
+  );
+}
+
+// The landing's trace card (file lines 282-287) with a real insight: the cheapest-hour finding when there is one, as
+// in the file's example, else the newest finding. With no finding yet it says so instead of showing sample figures.
+function TraceCard() {
+  const ins = usePolling<InsightsResponse>("/api/v1/insights?status=finding", null);
+  const list = ins.data?.insights ?? [];
+  const i = list.find((x) => x.rule === "cheapest_hour") ?? list[0];
+  if (!i) {
+    const text = ins.status === "error" ? "Insights could not be loaded just now." : ins.data ? "No rule has enough data for a finding yet. Each one names its sample size and window, and opens the lens that produced it." : "Loading the newest insight…";
+    return (
+      <>
+        <div className="mb-3 flex justify-between font-mono text-[11px] uppercase tracking-[0.08em] text-mute">
+          <span>Insight</span>
+          <b className="font-medium text-mute">{ins.data ? "No finding yet" : ""}</b>
+        </div>
+        <p className="text-[20px] leading-[1.45]">{text}</p>
+        <a href="/insights" className={`mt-4 ${btnPlain}`}>
+          See every rule and its status
+        </a>
+      </>
+    );
+  }
+  const a = i.window.start.slice(0, 16).replace("T", " ");
+  const b = i.window.end.slice(0, 16).replace("T", " ");
+  return (
+    <>
+      <div className="mb-3 flex justify-between font-mono text-[11px] uppercase tracking-[0.08em] text-mute">
+        <span>Insight: {i.title.toLowerCase()}</span>
+        <b className={`font-medium ${i.severity === "attention" ? "text-c1" : "text-text"}`}>{i.severity === "attention" ? "Attention" : "Info"}</b>
+      </div>
+      <p className="text-[20px] leading-[1.45]">{i.text}</p>
+      <div className="mt-4 mb-3.5 rounded-[3px] border border-line bg-bg px-3 py-2.5 font-mono text-[12px] text-mute">
+        n = {int.format(i.n)} · {a} to {a.slice(0, 10) === b.slice(0, 10) ? b.slice(11) : b} UTC
+      </div>
+      <a href={i.evidence_url} className={btnPlain}>
+        Show the evidence
+      </a>
+    </>
   );
 }
 
@@ -397,15 +437,7 @@ export function Landing() {
           </Reveal>
           <div className="mt-11 grid grid-cols-[1.1fr_.9fr] items-start gap-14 max-[980px]:grid-cols-1 max-[980px]:gap-9">
             <Reveal className="relative rounded-[4px] border border-line bg-panel p-6">
-              <div className="mb-3 flex justify-between font-mono text-[11px] uppercase tracking-[0.08em] text-mute">
-                <span>Insight</span>
-                <b className="font-medium text-mute">Not running yet</b>
-              </div>
-              <p className="text-[20px] leading-[1.45]">Insights appear here once the rule engine runs. Each one will name its sample size and window, and open the lens that produced it.</p>
-              <div className="mt-4 mb-3.5 rounded-[3px] border border-line bg-bg px-3 py-2.5 font-mono text-[12px] text-mute">The insight rules are built in Phase 7.</div>
-              <Link href={APP} className={btnPlain}>
-                Open the city instead
-              </Link>
+              <TraceCard />
             </Reveal>
             <Reveal>
               <ol className="list-none">

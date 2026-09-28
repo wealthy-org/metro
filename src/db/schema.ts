@@ -18,7 +18,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-// Mirrors project-context/schema.md. Analytics tables (facts, insights, dispatch, ...) arrive in later phases.
+// Mirrors project-context/schema.md. dispatch and analyst_answers arrive in Phases 10 and 11.
 
 const tstz = (name: string) => timestamp(name, { withTimezone: true });
 
@@ -183,4 +183,44 @@ export const aggDay = pgTable(
     failedTxCount: integer("failed_tx_count").notNull(),
   },
   (t) => [primaryKey({ columns: [t.date, t.action, t.subsidyClass] })],
+);
+
+// Ledger of Facts (PROJECT.md 13.1, 17): one row per computed fact. A rerun for the same window updates its row
+// (unique key and window), so the table grows only when the anchor block moves (KL-1).
+export const facts = pgTable(
+  "facts",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    key: varchar("key", { length: 128 }).notNull(),
+    windowStart: tstz("window_start").notNull(),
+    windowEnd: tstz("window_end").notNull(),
+    value: numeric("value").notNull(),
+    n: integer("n").notNull(),
+    computedAt: tstz("computed_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("uq_facts_key_window").on(t.key, t.windowStart, t.windowEnd), index("idx_facts_computed").on(t.computedAt.desc())],
+);
+
+export const INSIGHT_SEVERITIES = ["info", "attention"] as const;
+export const INSIGHT_STATUSES = ["finding", "not_enough_data"] as const;
+
+// Rule-based insights (PROJECT.md 13.2, 17). `id` is deterministic (rule, subject, window), so a rerun replaces a
+// finding. status, n, window and evidence_url are what api.md 1.5 returns and AT 15/16 check.
+export const insights = pgTable(
+  "insights",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    rule: varchar("rule", { length: 64 }).notNull(),
+    status: varchar("status", { length: 24, enum: INSIGHT_STATUSES }).notNull(),
+    text: text("text").notNull(),
+    factsRef: jsonb("facts_ref").$type<number[]>().notNull(),
+    severity: varchar("severity", { length: 16, enum: INSIGHT_SEVERITIES }).notNull(),
+    n: integer("n").notNull(),
+    windowStart: tstz("window_start").notNull(),
+    windowEnd: tstz("window_end").notNull(),
+    evidenceUrl: text("evidence_url").notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    expiresAt: tstz("expires_at").notNull(),
+  },
+  (t) => [index("idx_insights_created").on(t.createdAt.desc()), index("idx_insights_expires").on(t.expiresAt)],
 );

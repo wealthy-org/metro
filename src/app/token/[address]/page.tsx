@@ -3,7 +3,10 @@ import { notFound } from "next/navigation";
 import { EXPLORER_URL } from "../../../../config/known-contracts.ts";
 import { A, Bars, External, Facts, int, pct, ProfileShell, Section, short, Table, usd, utc } from "../../../components/profile/Profile.tsx";
 import { formatAge, formatCountCompact, formatDay, formatUsdCompact, NA } from "../../../lib/format.ts";
+import { InsightCard } from "../../../components/insights/InsightCard.tsx";
+import { relatedTo } from "../../../lib/insight-match.ts";
 import { getDb } from "../../../server/http.ts";
+import { getInsights } from "../../../server/insights.ts";
 import { getToken } from "../../../server/token.ts";
 
 // Token profile (PROJECT.md 15): metadata, age, holders and their change, top-10 share, volume, the fee trend of the
@@ -23,7 +26,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 export default async function TokenPage({ params }: Params) {
   const { address } = await params;
   if (!valid(address)) notFound();
-  const t = await getToken(getDb(), address.toLowerCase());
+  const db = getDb();
+  const [t, active] = await Promise.all([getToken(db, address.toLowerCase()), getInsights(db)]);
+  // Findings only: "not enough data" rows stay on /insights and in the Insights tab.
+  const related = relatedTo(active.insights.filter((i) => i.status === "finding"), { kind: "token", key: address });
   if (!t) notFound();
 
   const h = t.holders;
@@ -134,8 +140,21 @@ export default async function TokenPage({ params }: Params) {
         />
       </Section>
 
-      <Section title="Related insights">
-        <p className="text-[12px] text-mute">None yet. Insights about this token will be listed here, each with its evidence, once Metro computes insights.</p>
+      <Section title="Related insights" note="Active findings about this token (PROJECT.md 15).">
+        {related.length ? (
+          <div className="grid grid-cols-2 gap-x-3">
+            {related.map((i) => (
+              <InsightCard key={i.id} insight={i} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-[12px] text-mute">
+            No active finding mentions this token.{" "}
+            <a href="/insights" className="text-text underline decoration-mute underline-offset-2 hover:decoration-text">
+              See every rule and its status
+            </a>
+          </p>
+        )}
       </Section>
     </ProfileShell>
   );

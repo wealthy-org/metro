@@ -163,7 +163,8 @@ export type InspectorResponse = {
   window: CityWindowInfo;
   filters: Filters;
   // paid_share: share of likely_paid transactions, an estimate (PROJECT.md 12.2, KL-6); prototype line 598.
-  values: Omit<CityBuilding, "kind" | "key" | "label"> & { paid_share: number | null };
+  // median_fee_usd: raw windows of 24 h or less and hours only (KL-17), null otherwise; the figure insights cite (Phase 7 D2).
+  values: Omit<CityBuilding, "kind" | "key" | "label"> & { paid_share: number | null; median_fee_usd: number | null };
   // Same-length window just before this one; null for "all".
   previous: { tx_count: number; change: number | null } | null;
   trend: { bucket: "5m" | "1h" | "1d"; points: { ts: string; n: number }[] };
@@ -268,3 +269,26 @@ export type TxDetail = {
   positions: { lens: string; href: string }[];
   explorer_url: string;
 };
+
+// GET /api/v1/insights (PROJECT.md 13.2, 16). status "not_enough_data": n is below MIN_SAMPLE, shown as such (AT 15).
+export type InsightT = {
+  id: string;
+  rule: string;
+  title: string;
+  status: "finding" | "not_enough_data";
+  severity: "info" | "attention";
+  text: string;
+  n: number;
+  window: { start: string; end: string };
+  evidence_url: string;
+  facts_ref: number[];
+  // Subjects of the cited facts, as "action:swap", "token:0x…", "hour:2026-09-27T15:00Z", "wallet:0x…" (gate F48).
+  subjects: string[];
+  created_at: string;
+  expires_at: string;
+};
+export type InsightsResponse = { total: number; findings: number; min_sample: number; computed_at: string | null; insights: InsightT[]; generated_at: string };
+
+// GET /api/v1/facts?prefix= (PROJECT.md 13.1, 16).
+export type FactT = { id: number; key: string; window: { start: string; end: string }; value: number; n: number; computed_at: string };
+export type FactsResponse = { prefix: string; total: number; facts: FactT[]; generated_at: string };
