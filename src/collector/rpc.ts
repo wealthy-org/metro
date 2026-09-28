@@ -3,8 +3,9 @@ import { robinhood } from "viem/chains";
 import { RPC_POOL, type RpcEndpoint } from "../../config/known-contracts.ts";
 import { limitedFetch } from "./rate-limiter.ts";
 
-// Requests per second per endpoint (one HTTP call, batched or not, takes one token).
-const RATE_PER_ENDPOINT = Number(process.env.RPC_RATE_PER_SECOND ?? 10);
+// Requests per second per endpoint (one HTTP call, batched or not, takes one token). Not an env setting: PROJECT.md 23
+// lists no such variable (audit A7).
+const RATE_PER_ENDPOINT = 10;
 // Batches above ~50 calls come back incomplete on rpc.mainnet.chain.robinhood.com (2026-09-27); 10 is safe everywhere.
 const BATCH_SIZE = 10;
 

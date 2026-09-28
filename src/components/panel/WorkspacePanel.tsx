@@ -1,8 +1,8 @@
 "use client";
 
 import type { InspectorResponse } from "../../lib/api-types.ts";
-import { CITY_WINDOWS, formatMetric, type CityWindow } from "../../lib/city.ts";
-import type { Selection } from "../city/CityView.tsx";
+import { CITY_WINDOWS, formatMetric } from "../../lib/city.ts";
+import { dataQuery, filterSummary, type ViewState } from "../../lib/view-state.ts";
 import { usePolling } from "../hooks.ts";
 
 const POLL_MS = 15_000;
@@ -11,10 +11,12 @@ const shortHash = (h: string) => `${h.slice(0, 6)}…${h.slice(-4)}`;
 const utc = (iso: string) => `${iso.replace("T", " ").slice(0, 16)} UTC`;
 
 const TREND_LABEL = { "5m": "per 5 minutes", "1h": "per hour", "1d": "per day" } as const;
+const KIND_LABEL = { action: "Action type", token: "Pons token", hour: "One UTC hour" } as const;
 
 function windowLine(d: InspectorResponse): string {
   const { start, end, basis } = d.window;
   if (!start || !end) return "No blocks ingested yet";
+  if (d.kind === "hour") return `${utc(start)} to ${utc(end).slice(11)}`;
   const label = CITY_WINDOWS.find((w) => w.key === d.window.key)?.label ?? d.window.key;
   return basis === "txs" ? `${label}: ${utc(start)} to ${utc(end).slice(11)}` : `${label}: whole UTC days to ${utc(end)}`;
 }
@@ -75,20 +77,31 @@ function Details({ d, onClear }: { d: InspectorResponse; onClear: () => void }) 
     <>
       <h3 className="mb-1 font-display text-[22px] font-bold tracking-[0.01em]">{d.label}</h3>
       <p className="text-[12px] text-mute">
-        {d.kind === "token" ? "Pons token" : "Action type"} · {windowLine(d)}
+        {KIND_LABEL[d.kind]} · {windowLine(d)}
       </p>
+      {filterSummary(d.filters).length || d.filters.action ? (
+        <p className="mt-1 text-[12px] text-mute">Filtered: {[d.filters.action ? `action ${d.filters.action}` : null, ...filterSummary(d.filters)].filter(Boolean).join(", ")}</p>
+      ) : null}
 
-      <H4>Numbers in this window</H4>
+      <H4>{d.kind === "hour" ? "Numbers in this hour" : "Numbers in this window"}</H4>
       <Kv
         rows={[
           [d.kind === "token" ? "Transactions moving it" : "Transactions", int.format(v.tx_count)],
           ["Wallets", v.wallets === null ? "24 h or less only" : int.format(v.wallets)],
           ["Gas volume", formatMetric(v.gas_volume, "gas_volume")],
           ["Avg fee (blended)", formatMetric(v.avg_fee_usd, "avg_fee_usd")],
+          ["Paid share (estimate)", v.paid_share === null ? "—" : `${Math.round(v.paid_share * 100)}%`],
           ["Fail rate", d.kind === "token" ? "n/a for tokens" : formatMetric(v.fail_rate, "fail_rate")],
-          ["Change vs previous window", changeText],
+          [d.kind === "hour" ? "Change vs previous hour" : "Change vs previous window", changeText],
         ]}
       />
+
+      {d.breakdown && d.breakdown.length ? (
+        <>
+          <H4>By action</H4>
+          <Kv rows={d.breakdown.map((b) => [b.label, int.format(b.tx_count)] as [string, string])} />
+        </>
+      ) : null}
 
       <H4>Trend</H4>
       <Trend d={d} />
@@ -145,7 +158,7 @@ function Details({ d, onClear }: { d: InspectorResponse; onClear: () => void }) 
       )}
 
       <H4>Insights</H4>
-      <p className="text-[12px] text-mute">Coming soon: insights that mention this building appear here once the insight rules run.</p>
+      <p className="text-[12px] text-mute">Coming soon: insights that mention this {d.kind === "hour" ? "hour" : "object"} appear here once the insight rules run.</p>
 
       <div className="mt-4 flex gap-2">
         <button type="button" disabled title="Surveyor: coming soon" className="cursor-not-allowed rounded-[3px] border border-line bg-panel2 px-[11px] py-[7px] text-[12px] text-mute">
@@ -159,22 +172,23 @@ function Details({ d, onClear }: { d: InspectorResponse; onClear: () => void }) 
   );
 }
 
-function InspectorPane({ selected, window, onClear }: { selected: Selection; window: CityWindow; onClear: () => void }) {
-  const url = selected ? `/api/inspector?kind=${selected.kind}&key=${selected.key}&window=${window}` : null;
-  const insp = usePolling<InspectorResponse>(url, POLL_MS);
+function InspectorPane({ state, onClear }: { state: ViewState; onClear: () => void }) {
+  const selected = state.sel;
+  const url = selected ? `/api/inspector?${dataQuery(state, { kind: selected.kind, key: selected.key })}` : null;
+  const insp = usePolling<InspectorResponse>(url, state.at ? null : POLL_MS);
 
   if (!selected) {
     return (
       <>
         <h3 className="mb-1 font-display text-[22px] font-bold tracking-[0.01em]">Inspector</h3>
         <div className="rounded-[3px] border border-dashed border-line p-[18px] text-center text-mute">
-          Select a building or its label in the city. Its numbers and the transactions behind them appear here.
+          Select a building, a terrain row, a heatmap cell or a label. Its numbers and the transactions behind them appear here.
         </div>
       </>
     );
   }
-  // Details stay on screen while only the window changes; another building's details are never shown.
-  const d = insp.data && selected && insp.data.kind === selected.kind && insp.data.key === selected.key ? insp.data : null;
+  // Details stay on screen while the window, filters or time change; another object's details are never shown.
+  const d = insp.data && insp.data.kind === selected.kind && insp.data.key === selected.key ? insp.data : null;
   if (!d) {
     return <p className="text-mute" role="status">{insp.status === "error" ? "Details are unavailable. Retrying every 15 seconds." : "Loading details…"}</p>;
   }
@@ -186,7 +200,7 @@ function InspectorPane({ selected, window, onClear }: { selected: Selection; win
         </p>
       ) : insp.stale ? (
         <p role="status" className="mb-2 text-[11px] text-mute">
-          Updating for the new window…
+          Updating…
         </p>
       ) : null}
       <Details d={d} onClear={onClear} />
@@ -201,7 +215,7 @@ const TABS = [
   { key: "dispatch", label: "Dispatch", ready: false },
 ] as const;
 
-export function WorkspacePanel({ selected, window, onClear }: { selected: Selection; window: CityWindow; onClear: () => void }) {
+export function WorkspacePanel({ state, onClear }: { state: ViewState; onClear: () => void }) {
   return (
     <aside className="grid min-h-0 grid-rows-[44px_1fr] border-l border-line bg-panel" aria-label="Workspace">
       <div className="flex border-b border-line" role="tablist" aria-label="Workspace panels">
@@ -226,7 +240,7 @@ export function WorkspacePanel({ selected, window, onClear }: { selected: Select
         ))}
       </div>
       <section id="panel-inspector" role="tabpanel" aria-labelledby="panel-tab-inspector" className="min-h-0 overflow-auto p-4">
-        <InspectorPane selected={selected} window={window} onClear={onClear} />
+        <InspectorPane state={state} onClear={onClear} />
       </section>
     </aside>
   );

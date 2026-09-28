@@ -110,8 +110,9 @@ export const tokens = pgTable("tokens", {
   decimals: integer("decimals").notNull().default(18),
   isPons: boolean("is_pons").notNull().default(false),
   createdAt: tstz("created_at"),
-  holders: integer("holders").notNull().default(0),
-  supply: numeric("supply").notNull().default("0"),
+  // From Blockscout (PROJECT.md 8.1, Phase 6); null until measured, never a made-up 0 (PROJECT.md 3.2, audit A4).
+  holders: integer("holders"),
+  supply: numeric("supply"),
 });
 
 export const ponsLaunches = pgTable("pons_launches", {

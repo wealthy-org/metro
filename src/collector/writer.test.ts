@@ -1,10 +1,11 @@
 import { existsSync } from "node:fs";
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { KNOWN_CONTRACTS } from "../../config/known-contracts.ts";
 import { createDb, type Db } from "../db/client.ts";
-import { blocks, ingestCursor, tokenTransfers, txs } from "../db/schema.ts";
+import { blocks, ingestCursor, knownContracts, tokenTransfers, txs } from "../db/schema.ts";
 import type { BlockBundle } from "./ingest.ts";
-import { writeBatch, type CursorUpdate } from "./writer.ts";
+import { syncKnownContracts, writeBatch, type CursorUpdate } from "./writer.ts";
 
 // Integration test against the Neon dev branch (AT 1). Opt in with RUN_DB_TESTS=1; it writes and then removes
 // synthetic rows with block numbers far above the real chain head and a 2020-01-01 partition.
@@ -126,5 +127,20 @@ describe.skipIf(!enabled)("writeBatch on Postgres (PROJECT.md 9.1, AT 1)", () =>
     await writeBatch(db, BACK, [bundle(BASE + 160)]);
     const [row] = await db.select().from(ingestCursor).where(eq(ingestCursor.name, BACK_CURSOR));
     expect(row).toMatchObject({ block: BASE + 149, rangeStart: BASE + 100, rangeEnd: BASE + 200 });
+  });
+
+  it("mirrors config/known-contracts.ts into known_contracts (audit A5)", async () => {
+    const probe = { address: "0x00000000000000000000000000000000000000Ab" as const, kind: "pool" as const, label: "test pool" };
+    try {
+      await syncKnownContracts(db, [...KNOWN_CONTRACTS, probe]);
+      const withProbe = await db.select().from(knownContracts);
+      expect(withProbe.map((r) => r.address).sort()).toEqual([...KNOWN_CONTRACTS.map((c) => c.address.toLowerCase()), probe.address.toLowerCase()].sort());
+      expect(withProbe.find((r) => r.address === probe.address.toLowerCase())).toMatchObject({ kind: "pool", label: "test pool" });
+    } finally {
+      // Back to the real list: the probe row is removed because the config no longer names it.
+      await syncKnownContracts(db);
+    }
+    const rows = await db.select().from(knownContracts);
+    expect(rows.map((r) => r.address).sort()).toEqual(KNOWN_CONTRACTS.map((c) => c.address.toLowerCase()).sort());
   });
 });

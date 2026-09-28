@@ -6,7 +6,7 @@ import { log } from "./log.ts";
 import { PriceFeed } from "./price.ts";
 import { RpcPool } from "./rpc.ts";
 import { Rollups } from "./rollup.ts";
-import { recordError, writeBatch } from "./writer.ts";
+import { recordError, syncKnownContracts, writeBatch } from "./writer.ts";
 
 type Options = { maxBlocks: number | null; startBlock: bigint | null; batch: number; cursor: string };
 
@@ -34,6 +34,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const { db, pool } = createDb();
+  await syncKnownContracts(db);
   const rpc = new RpcPool();
   const prices = new PriceFeed(db);
   await prices.start();

@@ -1,5 +1,5 @@
 // Phase 0 source verification. Runs on Node 24+ native type stripping: `node scripts/verify-sources.ts`.
-// No dependencies. Blockscout is tried on the public URL first; BLOCKSCOUT_API_KEY (never printed) enables the PRO fallback.
+// No dependencies. Blockscout is read through BLOCKSCOUT_API_URL with the Collector's guard layer (PROJECT.md 23).
 // Exits with code 1 when any check fails.
 
 import { CHAIN_ID, PONS_FACTORY, RPC_POOL } from "../config/known-contracts.ts";
@@ -181,7 +181,7 @@ async function checkPons(url: string) {
   }
 }
 
-// Same route the Collector uses: public URL first, PRO API with BLOCKSCOUT_API_KEY only when public is blocked.
+// Same client the Collector and the API use: BLOCKSCOUT_API_URL only, through the guard layer.
 async function checkBlockscout() {
   const bs = new Blockscout();
   const checks: [string, (b: Json) => string | null][] = [
@@ -196,12 +196,11 @@ async function checkBlockscout() {
     try {
       const body = await bs.get(path);
       const problem = check(body);
-      const route = bs.usingFallback ? "PRO fallback" : "public";
-      record({ group: "blockscout", target: path, ok: problem === null, ms: Math.round(performance.now() - started), detail: `${route}: ${problem ?? summarize(body)}` });
+      record({ group: "blockscout", target: path, ok: problem === null, ms: Math.round(performance.now() - started), detail: problem ?? summarize(body) });
     } catch (err) {
       record({ group: "blockscout", target: path, ok: false, ms: Math.round(performance.now() - started), detail: err instanceof Error ? err.message : String(err) });
-      // Without a working route the remaining paths would fail the same way.
-      if (!process.env.BLOCKSCOUT_API_KEY) return;
+      // With the breaker open the remaining paths would fail the same way.
+      if (bs.unavailable) return;
     }
   }
 }

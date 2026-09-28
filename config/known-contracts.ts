@@ -40,14 +40,22 @@ export const RPC_POOL: readonly RpcEndpoint[] = [
   { url: "https://rpc.arrowrpc.com", batch: false, primary: false },
 ];
 
-// Public explorer API is tried first. It sat behind a Cloudflare challenge (HTTP 403) for scripted requests on
-// 2026-09-27, so the PRO API (needs BLOCKSCOUT_API_KEY) is the fallback.
+// Blockscout API v2, the default for BLOCKSCOUT_API_URL (PROJECT.md 23). Blocked by a Cloudflare challenge for
+// scripted requests on 2026-09-27, open again on 2026-09-28 (KL-3); src/collector/blockscout.ts guards every call.
 export const BLOCKSCOUT_PUBLIC_API = "https://robinhoodchain.blockscout.com/api/v2";
-// Explorer pages for people. The bot challenge applies to scripted API calls, not to a browser opening a page.
+// Explorer pages for people.
 export const EXPLORER_URL = "https://robinhoodchain.blockscout.com";
-export const BLOCKSCOUT_API = "https://api.blockscout.com/4663/api/v2";
 
-export const PONS_FACTORY = "0x7ed598bcef8bd9edd8c97a195c6d13f40801ec7e";
+// PONS_FACTORY_ADDRESS (PROJECT.md 23), defaulting to the factory verified in Phase 0. A value that is not an
+// address stops the process instead of silently watching the wrong contract. Stored lower-case, as RPC logs are.
+const DEFAULT_PONS_FACTORY = "0x7ed598bcef8bd9edd8c97a195c6d13f40801ec7e";
+function ponsFactory(): string {
+  const raw = (typeof process === "undefined" ? undefined : process.env.PONS_FACTORY_ADDRESS)?.trim();
+  if (!raw) return DEFAULT_PONS_FACTORY;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(raw)) throw new Error("PONS_FACTORY_ADDRESS must be a 0x-prefixed 20-byte address");
+  return raw.toLowerCase();
+}
+export const PONS_FACTORY = ponsFactory();
 export const TOPIC_TOKEN_LAUNCHED = "0x8d4aad4953d0ca700d468f3753aa14432d1b35b43ec6409f051fb6aa43a89607";
 
 // Nitro precompile for L2 -> L1 withdrawals (withdrawEth, sendTxToL1); eth_getCode returns 0xfe.
@@ -58,7 +66,7 @@ export const BRIDGE_TX_TYPES = new Set(["0x64", "0x69"]);
 
 export const KNOWN_CONTRACTS: KnownContract[] = [
   {
-    address: "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e",
+    address: PONS_FACTORY as `0x${string}`,
     kind: "factory",
     label: "Pons token factory",
     events: {

@@ -1,4 +1,4 @@
-import { Blockscout } from "../collector/blockscout.ts";
+import { sharedBlockscout } from "../collector/blockscout.ts";
 import { limitedFetch } from "../collector/rate-limiter.ts";
 
 // Ticker context from third-party sources (PROJECT.md 8.1). Held in memory with the frequency PROJECT.md gives
@@ -82,14 +82,14 @@ export async function chainEconomics(now = Date.now()): Promise<ChainEconomics |
   return economics?.value ?? null;
 }
 
-let blockscout: Blockscout | null = null;
 let stats: { value: ChainStats; at: number } | null = null;
 let statsInflight: Promise<ChainStats> | null = null;
 
+const isObject = (v: unknown) => typeof v === "object" && v !== null && !Array.isArray(v);
+
 async function loadStats(): Promise<ChainStats> {
-  blockscout ??= new Blockscout();
   try {
-    const body = await blockscout.get("/stats");
+    const body = await sharedBlockscout().get("/stats", { ttlMs: BLOCKSCOUT_TTL_MS, validate: isObject });
     return {
       available: true,
       total_transactions: num(field(body, "total_transactions")),
@@ -99,8 +99,8 @@ async function loadStats(): Promise<ChainStats> {
       fetched_at: new Date().toISOString(),
     };
   } catch {
-    // KL-3: the public explorer blocks server requests and no PRO key is set; the Ticker shows "unavailable".
-    // The raw error names internal configuration, so the public response carries a fixed reason.
+    // The client's guard layer is open (blocked, rate limited or down) or the answer had the wrong shape.
+    // The raw error can name internal details, so the public response carries a fixed reason.
     return { available: false, reason: "Blockscout explorer not reachable from the server", source: "Blockscout", checked_at: new Date().toISOString() };
   }
 }

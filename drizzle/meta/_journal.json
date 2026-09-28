@@ -36,6 +36,13 @@
       "when": 1790494874501,
       "tag": "0004_txs_ts_index",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790562040374,
+      "tag": "0005_tokens_nullable_figures",
+      "breakpoints": true
     }
   ]
 }

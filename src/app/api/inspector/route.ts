@@ -3,7 +3,8 @@ import { badRequest, getDb, PUBLIC_CACHE, serverError } from "../../../server/ht
 
 export const dynamic = "force-dynamic";
 
-// PROJECT.md 18: GET /api/inspector?kind=action|token&key=&window= (details of the selected object, 11.1).
+// PROJECT.md 18: GET /api/inspector?kind=action|token|hour&key=&window=&…filters&at= (details of the selected
+// object in any lens, 11.1).
 export async function GET(request: Request) {
   const params = parseInspectorParams(new URL(request.url).searchParams);
   if (typeof params === "string") return badRequest(params);

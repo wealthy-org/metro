@@ -7,6 +7,9 @@ import { writeBatch } from "../collector/writer.ts";
 import { createDb, type Db } from "../db/client.ts";
 import { aggDay, aggMinute, blocks, ponsLaunches, tokens, tokenTransfers, txs } from "../db/schema.ts";
 import { getCity, getInspector } from "./city.ts";
+import { NO_FILTERS } from "../lib/view-state.ts";
+
+const live = { filters: NO_FILTERS, at: null };
 
 // City lens and Inspector reads against the Neon dev branch. Opt in with RUN_DB_TESTS=1.
 // Block numbers sit below the other DB tests' ranges and every call passes an explicit anchor, so the tests
@@ -125,10 +128,10 @@ describe.skipIf(!enabled)("city lens and inspector reads (PROJECT.md 10.1, 11.1,
   });
 
   it("getInspector returns values, change, trend and newest samples for an action", async () => {
-    const insp = await getInspector(db, { kind: "action", key: "swap", window: "1h" }, at("12:00:00"));
+    const insp = await getInspector(db, { kind: "action", key: "swap", window: "1h", ...live }, at("12:00:00"));
     expect(insp).not.toBeNull();
     expect(insp?.label).toBe("Swap");
-    expect(insp?.values).toMatchObject({ tx_count: 3, wallets: 2 });
+    expect(insp?.values).toMatchObject({ tx_count: 3, wallets: 2, paid_share: 1 });
     // The window is [11:01, 12:01) and the previous hour [10:01, 11:01), so the 10:00:00 swap falls outside both.
     expect(insp?.previous).toEqual({ tx_count: 0, change: null });
     expect(insp?.trend.bucket).toBe("5m");
@@ -145,9 +148,9 @@ describe.skipIf(!enabled)("city lens and inspector reads (PROJECT.md 10.1, 11.1,
   });
 
   it("getInspector covers Pons tokens and rejects tokens that are not Pons", async () => {
-    const insp = await getInspector(db, { kind: "token", key: TOKEN, window: "24h" }, at("12:00:00"));
+    const insp = await getInspector(db, { kind: "token", key: TOKEN, window: "24h", ...live }, at("12:00:00"));
     expect(insp).toMatchObject({ label: "CITY", values: { tx_count: 3, fail_rate: null }, token: { symbol: "CITY", creator: A, launch_block: BASE } });
     expect(insp?.trend.points.map((p) => p.n)).toEqual([2, 1]);
-    expect(await getInspector(db, { kind: "token", key: OTHER_TOKEN, window: "24h" }, at("12:00:00"))).toBeNull();
+    expect(await getInspector(db, { kind: "token", key: OTHER_TOKEN, window: "24h", ...live }, at("12:00:00"))).toBeNull();
   });
 });

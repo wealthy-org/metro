@@ -1,7 +1,8 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, notInArray, sql } from "drizzle-orm";
+import { KNOWN_CONTRACTS, type KnownContract } from "../../config/known-contracts.ts";
 import type { Db } from "../db/client.ts";
 import { ensureTxPartitions } from "../db/partitions.ts";
-import { blocks, ingestCursor, ponsLaunches, tokens, tokenTransfers, txs } from "../db/schema.ts";
+import { blocks, ingestCursor, knownContracts, ponsLaunches, tokens, tokenTransfers, txs } from "../db/schema.ts";
 import type { BlockBundle } from "./ingest.ts";
 
 // Stays under Postgres' 65,535 bind-parameter limit for the widest table (txs, 14 columns).
@@ -76,4 +77,20 @@ export async function recordError(db: Db, cursorName: string, message: string): 
     .update(ingestCursor)
     .set({ lastError: message.slice(0, 500), lastErrorAt: sql`now()` })
     .where(eq(ingestCursor.name, cursorName));
+}
+
+// Mirrors config/known-contracts.ts (the source, PROJECT.md 9.3) into table known_contracts (PROJECT.md 17), so SQL
+// readers can join contract labels. Rows no longer in the config are removed (audit A5).
+export async function syncKnownContracts(db: Db, list: readonly KnownContract[] = KNOWN_CONTRACTS): Promise<void> {
+  const rows = list.map((c) => ({ address: c.address.toLowerCase(), kind: c.kind, label: c.label.slice(0, 64) }));
+  await db.transaction(async (tx) => {
+    if (rows.length > 0) {
+      await tx
+        .insert(knownContracts)
+        .values(rows)
+        .onConflictDoUpdate({ target: knownContracts.address, set: { kind: sql`excluded.kind`, label: sql`excluded.label`, verifiedAt: sql`now()` } });
+    }
+    const keep = rows.map((r) => r.address);
+    await tx.delete(knownContracts).where(keep.length > 0 ? notInArray(knownContracts.address, keep) : sql`true`);
+  });
 }

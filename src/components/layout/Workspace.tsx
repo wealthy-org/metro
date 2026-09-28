@@ -1,27 +1,96 @@
 "use client";
 
-import { useState } from "react";
-import { CITY_WINDOWS, RAW_WINDOW_MAX_SECONDS, type CityMetric, type CityWindow } from "../../lib/city.ts";
-import { CityView, type Selection } from "../city/CityView.tsx";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { isLensKey, isShortWindow, normalize, parseViewState, rawFilterCount, serializeViewState, type LensKey, type ViewState } from "../../lib/view-state.ts";
+import { CityView } from "../city/CityView.tsx";
+import { TimeScrubber } from "../controls/TimeScrubber.tsx";
+import { Toolbar } from "../controls/Toolbar.tsx";
+import { HeatmapView } from "../heatmap/HeatmapView.tsx";
 import { WorkspacePanel } from "../panel/WorkspacePanel.tsx";
+import type { Chip, StageInfo } from "../stage.tsx";
+import { TerrainView } from "../terrain/TerrainView.tsx";
+import { LensRail, RAIL_LENSES } from "./LensRail.tsx";
 
-// Stage and side panel share the selected building, window and metric. Renders two grid cells of the app grid.
-export function Workspace() {
-  const [metric, setMetric] = useState<CityMetric>("tx_count");
-  const [window, setWindow] = useState<CityWindow>("24h");
-  const [selected, setSelected] = useState<Selection>(null);
+// The workspace at /lens/[name] (PROJECT.md 7; KL-21): rail, toolbar, lens stage, time scrubber and side panel.
+// Every choice lives in the URL (PROJECT.md 11.2, 11.5; AT 9): the path names the lens, the query holds the rest.
+// Updates replace the URL in place, so reloading or sharing it restores the same view.
 
-  const changeWindow = (w: CityWindow) => {
-    setWindow(w);
-    // Wallets are not counted beyond 24 h (KL-17); fall back to transactions rather than show flat buildings.
-    const seconds = CITY_WINDOWS.find((x) => x.key === w)?.seconds ?? Infinity;
-    if (metric === "wallets" && seconds > RAW_WINDOW_MAX_SECONDS) setMetric("tx_count");
-  };
+const PHASE: Record<string, string> = { flow: "Phase 6", launchpad: "Phase 6", split: "Phase 8", graph: "Phase 9" };
+const QUESTION: Record<string, string> = {
+  flow: "What is moving right now, and how much does it pay?",
+  graph: "Which wallets keep moving value between each other?",
+  launchpad: "Which new Pons tokens are growing, and who holds them?",
+  split: "What changed after the rebate ended?",
+};
+
+function SoonStage({ lens }: { lens: string }) {
+  const label = RAIL_LENSES.find((l) => l.key === lens)?.label ?? lens;
+  return (
+    <div className="flex min-h-0 items-center justify-center p-8 text-center">
+      <div className="max-w-[48ch]">
+        <h3 className="mb-2 font-display text-[28px] font-bold">{label}</h3>
+        <p className="mb-2 text-[15px]">{QUESTION[lens] ?? ""}</p>
+        <p className="text-mute">This lens is built in {PHASE[lens] ?? "a later phase"}. Until then there is nothing to show here, rather than sample data.</p>
+      </div>
+    </div>
+  );
+}
+
+export function Workspace({ lens }: { lens: string }) {
+  const built: LensKey | null = isLensKey(lens) ? lens : null;
+  const params = useSearchParams();
+  const [state, setState] = useState<ViewState>(() => parseViewState(new URLSearchParams(params.toString()), built ?? "city"));
+  const [info, setInfo] = useState<StageInfo | null>(null);
+
+  // A lens switch is a navigation with its own query; read it again.
+  useEffect(() => {
+    setState(parseViewState(new URLSearchParams(window.location.search), built ?? "city"));
+    setInfo(null);
+  }, [built]);
+
+  useEffect(() => {
+    const onPop = () => setState(parseViewState(new URLSearchParams(window.location.search), built ?? "city"));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [built]);
+
+  const query = serializeViewState(state, false).toString();
+  useEffect(() => {
+    const url = `/lens/${lens}${query ? `?${query}` : ""}`;
+    if (url !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, "", url);
+  }, [lens, query]);
+
+  const onChange = useCallback((patch: Partial<ViewState>) => setState((s) => normalize({ ...s, ...patch })), []);
+  const onInfo = useCallback((i: StageInfo) => setInfo((prev) => (prev && prev.coverage.first === i.coverage.first && prev.coverage.last === i.coverage.last && prev.subsidy_end === i.subsidy_end ? prev : i)), []);
+  const onAt = useCallback((at: string | null) => setState((s) => normalize({ ...s, at })), []);
+
+  // A window longer than 24 h drops the raw-only filters (KL-20); say so instead of losing them silently (gate F27).
+  const [notice, setNotice] = useState<Chip | null>(null);
+  const prev = useRef(state);
+  useEffect(() => {
+    const p = prev.current;
+    prev.current = state;
+    if (p.window === state.window) return;
+    if (rawFilterCount(p.filters) > 0 && rawFilterCount(state.filters) === 0 && !isShortWindow(state.window)) {
+      setNotice({ text: "Token, value, wallet and status filters were cleared: they apply to windows of 24 h or less." });
+    } else if (isShortWindow(state.window)) {
+      setNotice(null);
+    }
+  }, [state]);
 
   return (
     <>
-      <CityView metric={metric} onMetric={setMetric} window={window} onWindow={changeWindow} selected={selected} onSelect={setSelected} />
-      <WorkspacePanel selected={selected} window={window} onClear={() => setSelected(null)} />
+      <LensRail active={lens} query={query} />
+      <main className="grid min-h-0 min-w-0 grid-rows-[44px_1fr_76px] bg-bg">
+        {built ? <Toolbar lens={built} state={state} onChange={onChange} /> : <div className="border-b border-line bg-panel" />}
+        {built === "city" ? <CityView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
+        {built === "terrain" ? <TerrainView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
+        {built === "heatmap" ? <HeatmapView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
+        {!built ? <SoonStage lens={lens} /> : null}
+        {built ? <TimeScrubber coverage={info?.coverage ?? null} at={state.at} onAt={onAt} subsidyEnd={info?.subsidy_end ?? null} /> : <div className="border-t border-line bg-panel" />}
+      </main>
+      <WorkspacePanel state={state} onClear={() => onChange({ sel: null })} />
     </>
   );
 }

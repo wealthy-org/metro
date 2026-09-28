@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export function useReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false);
@@ -14,49 +14,70 @@ export function useReducedMotion(): boolean {
   return reduced;
 }
 
-// `stale` marks data that belongs to the previous url while the new one loads, so a view can keep it on screen
-// instead of blanking. If the new url fails before any success, the old data is dropped: it describes something else.
+// `stale` marks data that belongs to an earlier url while the current one loads, so a view can keep it on screen
+// instead of blanking. If the current url fails before any success, the old data is dropped: it describes something else.
 export type Polled<T> = { status: "loading" | "ready" | "error"; data: T | null; stale: boolean };
 
-// Fetches `url` now and every `intervalMs` while the tab is visible. Keeps the last good data on error.
-// A null url disables fetching.
-export function usePolling<T>(url: string | null, intervalMs: number): Polled<T> {
+// Fetches `url`, and again every `pollMs` while the tab is visible (null: once). At most one request is in flight:
+// when the url changes during a request (scrubbing, playback), the request finishes and only the newest url is
+// fetched next, so fast changes skip intermediate steps instead of cancelling every request. A null url disables it.
+export function usePolling<T>(url: string | null, pollMs: number | null): Polled<T> {
   const [state, setState] = useState<Polled<T>>({ status: "loading", data: null, stale: false });
+  const wanted = useRef<string | null>(url);
+  const busy = useRef(false);
+  const lastGood = useRef<{ url: string; data: T } | null>(null);
+  const alive = useRef(true);
 
   useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    wanted.current = url;
     if (!url) {
+      lastGood.current = null;
       setState({ status: "loading", data: null, stale: false });
       return;
     }
-    let controller: AbortController | null = null;
-    let last: T | null = null;
-    setState((s) => ({ status: "loading", data: s.data, stale: s.data !== null }));
+    const controller = new AbortController();
 
-    async function poll() {
-      if (document.hidden || !url) return;
-      controller?.abort();
-      controller = new AbortController();
+    async function run(u: string) {
+      busy.current = true;
       try {
-        const res = await fetch(url, { signal: controller.signal, cache: "no-store" });
+        const res = await fetch(u, { signal: controller.signal, cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        last = (await res.json()) as T;
-        setState({ status: "ready", data: last, stale: false });
+        const data = (await res.json()) as T;
+        lastGood.current = { url: u, data };
+        if (alive.current) setState({ status: "ready", data, stale: u !== wanted.current });
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
-        setState({ status: "error", data: last, stale: false });
+        const keep = lastGood.current && lastGood.current.url === u ? lastGood.current.data : null;
+        if (alive.current && u === wanted.current) setState({ status: "error", data: keep, stale: false });
+      } finally {
+        busy.current = false;
       }
+      const next = wanted.current;
+      if (next && next !== u && alive.current && !controller.signal.aborted) void run(next);
     }
 
-    void poll();
-    const timer = setInterval(() => void poll(), intervalMs);
-    const onVisible = () => void poll();
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-      controller?.abort();
+    setState((s) => ({ status: "loading", data: s.data, stale: s.data !== null }));
+    if (!busy.current) void run(url);
+
+    const poll = () => {
+      if (!document.hidden && !busy.current && wanted.current === url) void run(url);
     };
-  }, [url, intervalMs]);
+    const timer = pollMs === null ? null : setInterval(poll, pollMs);
+    document.addEventListener("visibilitychange", poll);
+    return () => {
+      if (timer) clearInterval(timer);
+      document.removeEventListener("visibilitychange", poll);
+      // The url changed: an in-flight request for it keeps running and hands over to the newest url when done.
+      if (wanted.current === null) controller.abort();
+    };
+  }, [url, pollMs]);
 
   return state;
 }

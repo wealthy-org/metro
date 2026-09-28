@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildingHeights, costColor, feeScale, formatMetric, MAX_HEIGHT, MIN_HEIGHT, slotPosition, type CityBuilding } from "../lib/city.ts";
 import { parseInspectorParams, resolveRange } from "./city.ts";
+import { NO_FILTERS } from "../lib/view-state.ts";
 
 const q = (s: string) => new URLSearchParams(s);
 const anchor = new Date("2026-09-27T06:15:29Z");
@@ -25,20 +26,32 @@ describe("resolveRange", () => {
 });
 
 describe("parseInspectorParams (PROJECT.md 18)", () => {
-  it("accepts actions and token addresses, lower-casing the address", () => {
-    expect(parseInspectorParams(q("kind=action&key=swap"))).toEqual({ kind: "action", key: "swap", window: "24h" });
+  it("accepts actions, token addresses and UTC hours, lower-casing the address", () => {
+    expect(parseInspectorParams(q("kind=action&key=swap"))).toEqual({ kind: "action", key: "swap", window: "24h", filters: NO_FILTERS, at: null });
     expect(parseInspectorParams(q("kind=token&key=0x8B6ADC71111029E4FC2A6E20806955FD3D92D593&window=7d"))).toEqual({
       kind: "token",
       key: "0x8b6adc71111029e4fc2a6e20806955fd3d92d593",
       window: "7d",
+      filters: NO_FILTERS,
+      at: null,
+    });
+    expect(parseInspectorParams(q("kind=hour&key=2026-09-27T15:00Z&status=failed&at=2026-09-27T15:30Z"))).toEqual({
+      kind: "hour",
+      key: "2026-09-27T15:00Z",
+      window: "24h",
+      filters: { ...NO_FILTERS, status: "failed" },
+      at: "2026-09-27T15:30Z",
     });
   });
 
-  it("rejects unknown kinds, actions without a building, bad addresses and windows", () => {
+  it("rejects unknown kinds, actions without a building, bad addresses, hours, windows and filters", () => {
     expect(parseInspectorParams(q("kind=wallet&key=swap"))).toMatch(/^kind/);
     expect(parseInspectorParams(q("kind=action&key=other"))).toMatch(/^key must be one of/);
     expect(parseInspectorParams(q("kind=token&key=0x123"))).toMatch(/token address/);
+    expect(parseInspectorParams(q("kind=hour&key=2026-09-27T15:30Z"))).toMatch(/UTC hour/);
     expect(parseInspectorParams(q("kind=action&key=swap&window=2d"))).toMatch(/^window/);
+    expect(parseInspectorParams(q("kind=action&key=swap&window=7d&status=failed"))).toMatch(/24 h or less/);
+    expect(parseInspectorParams(q("kind=action&key=swap&at=yesterday"))).toMatch(/^at must/);
   });
 });
 

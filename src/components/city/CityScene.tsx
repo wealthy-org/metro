@@ -5,19 +5,20 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import * as THREE from "three";
 import { BUILDING_FOOTPRINT, formatMetric, metricValue, slotPosition, type CityBuilding, type CityMetric } from "../../lib/city.ts";
+import type { CameraPreset } from "../../lib/view-state.ts";
 
 type OrbitControlsImpl = ComponentRef<typeof OrbitControls>;
 
-export type CameraPreset = "angle" | "top" | "street";
+export type { CameraPreset };
 
-// Orbit values from the prototype (setCam): theta, phi and radius around the target.
-const TARGET = new THREE.Vector3(0, 1.5, 0);
+// Orbit values from the prototype (setCam): theta, phi and radius around the target. Shared with the Terrain.
+export const TARGET = new THREE.Vector3(0, 1.5, 0);
 const PRESETS: Record<CameraPreset, { th: number; ph: number; rad: number }> = {
   angle: { th: 0.8, ph: 0.95, rad: 34 },
   top: { th: -Math.PI / 2, ph: 0.12, rad: 34 },
   street: { th: 0.55, ph: 1.42, rad: 18 },
 };
-const presetPosition = (p: CameraPreset) => {
+export const presetPosition = (p: CameraPreset) => {
   const { th, ph, rad } = PRESETS[p];
   return new THREE.Vector3(TARGET.x + rad * Math.sin(ph) * Math.cos(th), TARGET.y + rad * Math.cos(ph), TARGET.z + rad * Math.sin(ph) * Math.sin(th));
 };
@@ -43,9 +44,32 @@ type SceneProps = {
   onContextLost: () => void;
 };
 
-function Buildings({ buildings, heights, colors, onSelect, onHover }: Pick<SceneProps, "buildings" | "heights" | "colors" | "onSelect" | "onHover">) {
+// Lit-window look of the prototype and the landing hero (PROJECT.md 20, audit A16): each building glows in its own cost
+// color. MeshStandardMaterial has one emissive color for all instances, so the instance color is added as emissive
+// light in the shader, scaled per instance by aGlow (0.25, or 0.75 for the selected building, as in the prototype).
+const GLOW = 0.25;
+const GLOW_SELECTED = 0.75;
+
+function glowMaterial(): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ roughness: 0.6 });
+  m.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute float aGlow;\nvarying float vGlow;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGlow = aGlow;");
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying float vGlow;")
+      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\n#ifdef USE_COLOR\ntotalEmissiveRadiance += vColor.rgb * vGlow;\n#endif");
+  };
+  m.customProgramCacheKey = () => "metro-building-glow";
+  return m;
+}
+
+export function Buildings({ buildings, heights, colors, selectedIndex, onSelect, onHover }: Pick<SceneProps, "buildings" | "heights" | "colors" | "selectedIndex" | "onSelect" | "onHover">) {
   const mesh = useRef<THREE.InstancedMesh>(null);
   const invalidate = useThree((s) => s.invalidate);
+  const material = useMemo(glowMaterial, []);
+  const glow = useMemo(() => new THREE.InstancedBufferAttribute(new Float32Array(CAPACITY).fill(GLOW), 1), []);
+  useEffect(() => () => material.dispose(), [material]);
 
   useLayoutEffect(() => {
     const m = mesh.current;
@@ -61,14 +85,16 @@ function Buildings({ buildings, heights, colors, onSelect, onHover }: Pick<Scene
       m.setMatrixAt(i, dummy.matrix);
       const [r, g, b] = colors[i] ?? [0, 0, 0];
       m.setColorAt(i, color.setRGB(r, g, b, THREE.SRGBColorSpace));
+      glow.setX(i, i === selectedIndex ? GLOW_SELECTED : GLOW);
     });
     m.count = buildings.length;
     m.instanceMatrix.needsUpdate = true;
     if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    glow.needsUpdate = true;
     // Raycasting against instances uses the bounding sphere; heights change with the metric.
     m.computeBoundingSphere();
     invalidate();
-  }, [buildings, heights, colors, invalidate]);
+  }, [buildings, heights, colors, selectedIndex, glow, invalidate]);
 
   const index = (e: ThreeEvent<PointerEvent | MouseEvent>) => (typeof e.instanceId === "number" && e.instanceId < buildings.length ? e.instanceId : null);
 
@@ -90,8 +116,10 @@ function Buildings({ buildings, heights, colors, onSelect, onHover }: Pick<Scene
         if (i !== null) onSelect(i);
       }}
     >
-      <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial roughness={0.6} />
+      <boxGeometry args={[1, 1, 1]}>
+        <primitive object={glow} attach="attributes-aGlow" />
+      </boxGeometry>
+      <primitive object={material} attach="material" />
     </instancedMesh>
   );
 }
@@ -135,7 +163,7 @@ function Labels({ buildings, heights, metric, selectedIndex, onSelect }: Pick<Sc
 }
 
 // Moves the camera to a preset: eased over EASE_MS, or at once under prefers-reduced-motion.
-function CameraRig({ preset, nonce, reducedMotion }: { preset: CameraPreset; nonce: number; reducedMotion: boolean }) {
+export function CameraRig({ preset, nonce, reducedMotion }: { preset: CameraPreset; nonce: number; reducedMotion: boolean }) {
   const camera = useThree((s) => s.camera);
   const controls = useThree((s) => s.controls) as OrbitControlsImpl | null;
   const invalidate = useThree((s) => s.invalidate);
@@ -170,7 +198,7 @@ function CameraRig({ preset, nonce, reducedMotion }: { preset: CameraPreset; non
   return null;
 }
 
-function Ground() {
+export function Ground() {
   return (
     <>
       <mesh rotation-x={-Math.PI / 2}>
@@ -227,7 +255,7 @@ export default function CityScene(props: SceneProps) {
       <hemisphereLight args={["#9fb2d6", "#0b0d12", 0.85 * Math.PI]} />
       <directionalLight position={[-14, 24, 10]} intensity={0.7 * Math.PI} />
       <Ground />
-      <Buildings buildings={props.buildings} heights={props.heights} colors={props.colors} onSelect={props.onSelect} onHover={props.onHover} />
+      <Buildings buildings={props.buildings} heights={props.heights} colors={props.colors} selectedIndex={props.selectedIndex} onSelect={props.onSelect} onHover={props.onHover} />
       {props.selectedIndex >= 0 ? <SelectionOutline index={props.selectedIndex} height={selectedHeight} /> : null}
       {created ? <Labels buildings={props.buildings} heights={props.heights} metric={props.metric} selectedIndex={props.selectedIndex} onSelect={props.onSelect} /> : null}
       <OrbitControls makeDefault target={TARGET.toArray()} enablePan={false} enableDamping={false} minDistance={10} maxDistance={70} minPolarAngle={0.1} maxPolarAngle={1.5} />
