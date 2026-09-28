@@ -1,4 +1,5 @@
-import { sharedBlockscout } from "../collector/blockscout.ts";
+import { BlockscoutError, BlockscoutUnavailable, sharedBlockscout } from "../collector/blockscout.ts";
+import { log } from "../collector/log.ts";
 import { limitedFetch } from "../collector/rate-limiter.ts";
 
 // Ticker context from third-party sources (PROJECT.md 8.1). Held in memory with the frequency PROJECT.md gives
@@ -87,6 +88,15 @@ let statsInflight: Promise<ChainStats> | null = null;
 
 const isObject = (v: unknown) => typeof v === "object" && v !== null && !Array.isArray(v);
 
+const GENERIC_REASON = "Blockscout explorer not reachable from the server";
+
+// Public reason for an unavailable chain stats readout. Messages of the Blockscout client are fixed texts written in
+// src/collector/blockscout.ts (status code or failure kind, no URL, no key), so they are safe to show and tell a
+// Cloudflare block apart from a timeout. Anything else stays generic.
+export function blockscoutReason(err: unknown): string {
+  return err instanceof BlockscoutUnavailable || err instanceof BlockscoutError ? err.message : GENERIC_REASON;
+}
+
 async function loadStats(): Promise<ChainStats> {
   try {
     const body = await sharedBlockscout().get("/stats", { ttlMs: BLOCKSCOUT_TTL_MS, validate: isObject });
@@ -98,10 +108,16 @@ async function loadStats(): Promise<ChainStats> {
       source: "Blockscout",
       fetched_at: new Date().toISOString(),
     };
-  } catch {
-    // The client's guard layer is open (blocked, rate limited or down) or the answer had the wrong shape.
-    // The raw error can name internal details, so the public response carries a fixed reason.
-    return { available: false, reason: "Blockscout explorer not reachable from the server", source: "Blockscout", checked_at: new Date().toISOString() };
+  } catch (err) {
+    // External API failures are logged (PROJECT.md 19 observability), at most once per 5 minutes by the cache below.
+    const reason = blockscoutReason(err);
+    log("warn", "blockscout request failed", {
+      source: "blockscout",
+      path: "/stats",
+      reason,
+      retry_after: err instanceof BlockscoutUnavailable ? new Date(err.until).toISOString() : null,
+    });
+    return { available: false, reason, source: "Blockscout", checked_at: new Date().toISOString() };
   }
 }
 
