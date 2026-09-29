@@ -167,6 +167,17 @@ export default function MethodologyPage() {
 
       <Section title="Limits">
         <Rows rows={LIMITS} />
+        <p className="mt-3 max-w-[80ch] text-[14px] text-mute">
+          The tables behind every view, their coverage and the CSV exports are on{" "}
+          <a href="/data" className="text-text underline decoration-mute underline-offset-2 hover:decoration-text">
+            /data
+          </a>
+          ; the public read endpoints, their limits and live examples are documented on{" "}
+          <a href="/api" className="text-text underline decoration-mute underline-offset-2 hover:decoration-text">
+            /api
+          </a>
+          .
+        </p>
       </Section>
     </ProfileShell>
   );

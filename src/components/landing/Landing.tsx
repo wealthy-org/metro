@@ -607,7 +607,16 @@ export function Landing() {
           <span>
             <b className="font-display text-[20px] tracking-[0.04em] text-accent">METRO</b> &nbsp; Independent analytics for Robinhood Chain. Not affiliated with Robinhood.
           </span>
-          <span className="font-mono text-[12px]">Data: blocks ingested from Robinhood Chain RPC.</span>
+          <span className="font-mono text-[12px]">
+            Data: blocks ingested from Robinhood Chain RPC.{" "}
+            <Link href="/data" className="text-text underline decoration-mute underline-offset-2 hover:decoration-text">
+              Dataset catalog
+            </Link>{" "}
+            ·{" "}
+            <Link href="/api" className="text-text underline decoration-mute underline-offset-2 hover:decoration-text">
+              API
+            </Link>
+          </span>
         </div>
       </footer>
     </div>

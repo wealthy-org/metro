@@ -215,6 +215,9 @@ export type StatsResponse = {
   chain: ChainEconomics | null;
   // Blockscout /api/v2/stats, refreshed every 5 minutes (PROJECT.md 8.1); unavailable while KL-3 holds.
   chain_stats: ChainStats;
+  // The widest sample (24 h) at the top level; each metric above keeps its own n and window (Phase 12 audit).
+  n: number | null;
+  window: Window | null;
   generated_at: string;
 };
 
@@ -233,6 +236,9 @@ export type TokenProfile = {
   market_available: boolean;
   daily: { date: string; n: number; avg_fee_usd: number | null }[];
   transfers: { tx_hash: string; from: string; to: string; amount: string; ts: string }[];
+  // The profile's window is the 7 UTC days up to the anchor; n is the transactions that moved it in that window.
+  n: number | null;
+  window: Window | null;
   anchor: string | null;
   generated_at: string;
 };

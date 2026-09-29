@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { coverage } from "../../../../../server/filters.ts";
 import { badRequest, getDb, serverError } from "../../../../../server/http.ts";
 import { num, rows } from "../../../../../server/query.ts";
+import { EXPORT_DATASETS } from "../../../../../server/export-datasets.ts";
 import { csvString } from "../../../../../lib/export.ts";
 
 export const dynamic = "force-dynamic";
@@ -10,26 +11,7 @@ export const dynamic = "force-dynamic";
 // rows, blocks at most 24 h, agg_minute at most 7 days; the small tables export whole. Out of bounds is HTTP 400 with
 // the limit. The first line states the dataset, n and the window.
 const DAY_MS = 86_400_000;
-const MAX_TX_ROWS = 50_000;
-
-type Dataset = {
-  columns: string[];
-  table: string;
-  order: string;
-  timeColumn: string | null;
-  maxSpanMs: number | null;
-  rowCap: number | null;
-};
-
-const DATASETS: Record<string, Dataset> = {
-  txs: { columns: ["hash", "block", "ts", "from_address", "to_address", "value", "gas_used", "gas_price", "fee_eth", "fee_usd", "status", "method", "action", "subsidy_class"], table: "txs", order: "ts, hash", timeColumn: "ts", maxSpanMs: DAY_MS, rowCap: MAX_TX_ROWS },
-  blocks: { columns: ["number", "hash", "ts", "gas_used", "gas_limit", "base_fee", "tx_count"], table: "blocks", order: "number", timeColumn: "ts", maxSpanMs: DAY_MS, rowCap: null },
-  agg_minute: { columns: ["ts", "action", "tx_count", "gas_used", "fee_usd_sum", "fee_usd_median", "wallets"], table: "agg_minute", order: "ts, action", timeColumn: "ts", maxSpanMs: 7 * DAY_MS, rowCap: null },
-  agg_day: { columns: ["date", "action", "subsidy_class", "tx_count", "gas_used", "fee_usd_avg", "fee_usd_median", "active_wallets", "failed_tx_count", "system_tx_count"], table: "agg_day", order: "date, action, subsidy_class", timeColumn: null, maxSpanMs: null, rowCap: null },
-  facts: { columns: ["id", "key", "window_start", "window_end", "value", "n", "computed_at"], table: "facts", order: "id", timeColumn: null, maxSpanMs: null, rowCap: null },
-  insights: { columns: ["id", "rule", "status", "text", "n", "severity", "window_start", "window_end", "evidence_url", "created_at", "expires_at"], table: "insights", order: "created_at DESC", timeColumn: null, maxSpanMs: null, rowCap: null },
-  tokens: { columns: ["address", "symbol", "name", "decimals", "is_pons", "created_at", "holders", "supply"], table: "tokens", order: "address", timeColumn: null, maxSpanMs: null, rowCap: null },
-};
+const DATASETS = EXPORT_DATASETS;
 
 export async function GET(request: Request, ctx: { params: Promise<{ dataset: string }> }) {
   const { dataset } = await ctx.params;

@@ -42,6 +42,9 @@ export async function GET() {
       subsidized: stats.latest ? stats.subsidized : null,
       eth_usd: stats.price?.eth_usd ?? null,
       eth_usd_ts: stats.price?.ts ?? null,
+      // The widest sample (24 h) is the ticker's top-level window; each metric keeps its own n and window above.
+      n: stats.latest ? stats.subsidized.n : null,
+      window: stats.latest ? stats.subsidized.window : null,
       chain: economics,
       chain_stats: explorer,
       generated_at: new Date().toISOString(),

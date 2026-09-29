@@ -7,7 +7,8 @@ import { memoized } from "./rpc-read.ts";
 // days before and after SUBSIDY_END_DATE (10.7); the comparator (11.4) passes its own. Results are shared for 60 s.
 
 export type SubsidyParams = { before: SubsidyWindow; after: SubsidyWindow; custom: boolean };
-export type SubsidyResponse = SubsidyResult & { windows: { before: string; after: string; custom: boolean } };
+// n and window at the top level make the audit of PROJECT.md 16 uniform: the sample is both windows together.
+export type SubsidyResponse = SubsidyResult & { windows: { before: string; after: string; custom: boolean }; n: number; window: { start: string; end: string } };
 
 export function parseSubsidyParams(params: URLSearchParams): SubsidyParams | string {
   const d = defaultWindows(new Date(subsidyEnd()));
@@ -21,5 +22,5 @@ export function parseSubsidyParams(params: URLSearchParams): SubsidyParams | str
 export async function getSubsidy(db: Db, p: SubsidyParams): Promise<SubsidyResponse> {
   const key = `subsidy|${windowParam(p.before)}|${windowParam(p.after)}`;
   const result = await memoized(key, 60_000, () => computeSubsidy(db, p.before, p.after, new Date(subsidyEnd())));
-  return { ...result, windows: { before: windowParam(p.before), after: windowParam(p.after), custom: p.custom } };
+  return { ...result, windows: { before: windowParam(p.before), after: windowParam(p.after), custom: p.custom }, n: result.before.tx + result.after.tx, window: { start: result.before.start, end: result.after.end } };
 }

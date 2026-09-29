@@ -98,6 +98,10 @@ export async function getToken(db: Db, address: string, at: string | null = null
     market: m ? { price_usd: m.price_usd, volume_24h_usd: m.volume_24h_usd, pools: m.pools } : null,
     market_available: markets !== null,
     daily: days.map((d) => ({ date: d, n: num(byDay.get(d)?.n), avg_fee_usd: numOrNull(byDay.get(d)?.fee) })),
+    // The profile's window is the 7 UTC days up to the anchor; n is the transactions that moved the token in it.
+    // No ingested transfer at all means unknown, not zero (the same rule as holders).
+    n: transfers.length === 0 ? null : days.reduce((t, d) => t + num(byDay.get(d)?.n), 0),
+    window: sparkStart && anchor ? { start: sparkStart.toISOString(), end: anchor.toISOString() } : null,
     transfers: transfers.map((x) => ({
       tx_hash: String(x.tx_hash),
       from: String(x.from_address),
