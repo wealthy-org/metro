@@ -56,6 +56,14 @@ export function TerrainView({ state, onChange, onInfo, notice }: { state: ViewSt
   const [gl, setGl] = useWebGl();
   const [sceneKey, setSceneKey] = useState(0);
   const [presetNonce, setPresetNonce] = useState(0);
+  // Table view (PROJECT.md 19; Phase 13): the grid that also replaces the surface without WebGL, on demand.
+  const [view, setView] = useState<"scene" | "table">("scene");
+  // Unmounting the canvas (switching to Table) fires a final context-lost event; only a loss while the scene is on
+  // screen counts, and switching back gets a fresh context.
+  const viewRef = useRef(view);
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
   const [hover, setHover] = useState<{ row: number; bucket: number; x: number; y: number } | null>(null);
   const stage = useRef<HTMLDivElement>(null);
   const d = t.data;
@@ -120,7 +128,7 @@ export function TerrainView({ state, onChange, onInfo, notice }: { state: ViewSt
 
   return (
     <div ref={stage} className={`relative min-h-0 overflow-hidden ${hovered ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}`}>
-      {gl === "ok" && d ? (
+      {gl === "ok" && d && view === "scene" ? (
         <TerrainScene
           key={sceneKey}
           data={d}
@@ -132,14 +140,20 @@ export function TerrainView({ state, onChange, onInfo, notice }: { state: ViewSt
           reducedMotion={reducedMotion}
           onPick={pick}
           onHover={onHover}
-          onContextLost={() => setGl("lost")}
+          onContextLost={() => {
+            if (viewRef.current === "scene") setGl("lost");
+          }}
         />
       ) : null}
 
-      {(gl === "none" || gl === "lost") && d ? (
+      {(view === "table" || gl === "none" || gl === "lost") && d ? (
         <div className="absolute inset-0 overflow-auto p-6 pt-16">
-          <h3 className="mb-1 font-display text-[22px] font-bold">{gl === "none" ? "3D is unavailable in this browser" : "The 3D view stopped"}</h3>
-          <p className="mb-4 max-w-[60ch] text-mute">The same terrain is shown below as a grid: one row per {state.rows === "tokens" ? "token" : "action type"}, one cell per time bucket, color from the metric.</p>
+          <h3 className="mb-1 font-display text-[22px] font-bold">{gl === "none" ? "3D is unavailable in this browser" : gl === "lost" ? "The 3D view stopped" : "Table view"}</h3>
+          <p className="mb-4 max-w-[60ch] text-mute">
+            {gl === "none" || gl === "lost"
+              ? "The same terrain is shown below as a grid: one row per " + (state.rows === "tokens" ? "token" : "action type") + ", one cell per time bucket, color from the metric."
+              : "The same terrain as a grid: one row per " + (state.rows === "tokens" ? "token" : "action type") + ", one cell per time bucket, color from the metric. Click a cell to inspect it."}
+          </p>
           {gl === "lost" ? (
             <button
               type="button"
@@ -157,21 +171,38 @@ export function TerrainView({ state, onChange, onInfo, notice }: { state: ViewSt
       ) : null}
 
       {gl === "ok" ? (
-        <div className="absolute top-3.5 right-3.5 z-30 flex overflow-hidden rounded-[3px] border border-line bg-panel" role="group" aria-label="Camera">
-          {(["angle", "top", "street"] as const).map((p) => (
-            <button
-              key={p}
-              type="button"
-              aria-pressed={state.cam === p}
-              onClick={() => {
-                onChange({ cam: p });
-                setPresetNonce((n) => n + 1);
-              }}
-              className={`border-r border-line px-[11px] py-1.5 text-[12px] capitalize last:border-r-0 ${state.cam === p ? "bg-panel2 text-accent" : "text-mute hover:text-text"}`}
-            >
-              {p}
-            </button>
-          ))}
+        <div className="absolute top-3.5 right-3.5 z-30 flex gap-2">
+          <div className="flex overflow-hidden rounded-[3px] border border-line bg-panel" role="group" aria-label="View">
+            {(["scene", "table"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={view === v}
+                onClick={() => setView(v)}
+                className={`border-r border-line px-[11px] py-1.5 text-[12px] last:border-r-0 ${view === v ? "bg-panel2 text-accent" : "text-mute hover:text-text"}`}
+              >
+                {v === "scene" ? "3D" : "Table"}
+              </button>
+            ))}
+          </div>
+          {view === "scene" ? (
+            <div className="flex overflow-hidden rounded-[3px] border border-line bg-panel" role="group" aria-label="Camera">
+              {(["angle", "top", "street"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  aria-pressed={state.cam === p}
+                  onClick={() => {
+                    onChange({ cam: p });
+                    setPresetNonce((n) => n + 1);
+                  }}
+                  className={`border-r border-line px-[11px] py-1.5 text-[12px] capitalize last:border-r-0 ${state.cam === p ? "bg-panel2 text-accent" : "text-mute hover:text-text"}`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

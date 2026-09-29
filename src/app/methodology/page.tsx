@@ -165,10 +165,25 @@ export default function MethodologyPage() {
         </div>
       </Section>
 
+      <Section title="Accuracy cross-check" note="PROJECT.md 19 and AT 6: estimated day totals against an independent random sample over RPC and growthepie's per-day count.">
+        <div className="max-w-[80ch] space-y-2 text-[14px] text-mute">
+          <p>
+            The stored sample days use 12 fixed-offset slices of 30 blocks, three seconds each (KL-28); with so few samples one burst can throw the day estimate off, and the measured difference from the uniform random reference (n = 1,000 single blocks a day over RPC, <code className="font-mono text-[12px]">eth_getBlockTransactionCountByNumber</code>) ran +5.1% to +254.7% across 22 to 28 Sep 2026, mean +90.9% (KL-37). The reference itself sat +4.6% from growthepie, which is in step with the ArbOS internal transaction counted in every block (KL-7; its share is shown beside the difference on{" "}
+            <a href="/data" className="text-text underline decoration-mute underline-offset-2 hover:decoration-text">
+              /data
+            </a>
+            ).
+          </p>
+          <p>
+            The tolerance is therefore stated from measurement, not assumed: at n = 1,000 the reference carries ±95% of 4% to 9%, and it is the number the cross-check compares against; the stored totals stay labeled estimates and their difference is reported as it is. Sampling those days denser (more slices) would tighten the stored totals and is a separate decision (KL-37, option (b), not taken).
+          </p>
+        </div>
+      </Section>
+
       <Section title="Limits">
         <Rows rows={LIMITS} />
         <p className="mt-3 max-w-[80ch] text-[14px] text-mute">
-          The tables behind every view, their coverage and the CSV exports are on{" "}
+          The tables behind every view, their coverage, the day-by-day cross-check and the CSV exports are on{" "}
           <a href="/data" className="text-text underline decoration-mute underline-offset-2 hover:decoration-text">
             /data
           </a>

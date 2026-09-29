@@ -26,6 +26,19 @@ export function CityView({ state, onChange, onInfo, notice }: { state: ViewState
   const [gl, setGl] = useWebGl();
   const [sceneKey, setSceneKey] = useState(0);
   const [presetNonce, setPresetNonce] = useState(0);
+  // Table view (PROJECT.md 19; Phase 13): the bars that also replace the scene without WebGL, on demand.
+  const [view, setView] = useState<"scene" | "table">("scene");
+  // Automatic quality reduction (PROJECT.md 24.6, AT 29; Phase 13): under 45 fps for two samples steps down (first
+  // DPR, then vehicle count), stable at 55 fps or more for five samples steps back up. Measured only while moving.
+  const [quality, setQuality] = useState<0 | 1 | 2>(0);
+  const lowSamples = useRef(0);
+  const highSamples = useRef(0);
+  // Unmounting the canvas (switching to Table) fires a final context-lost event; only a loss while the scene is on
+  // screen counts, and switching back gets a fresh context.
+  const viewRef = useRef(view);
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
   const [hover, setHover] = useState<{ index: number; x: number; y: number } | null>(null);
   const stage = useRef<HTMLDivElement>(null);
   // Tooltip position relative to the stage, measured when the pointer moves rather than during render.
@@ -58,6 +71,34 @@ export function CityView({ state, onChange, onInfo, notice }: { state: ViewState
     return { colors: sample.map((r) => costColor(Math.min(1, r.fee_usd / top))), tps: flow.data?.tps ?? null };
   }, [flow.data, state.at]);
   const vehiclesMoving = vehicles !== null && !reducedMotion && flow.status !== "error";
+  const movingRef = useRef(false);
+  useEffect(() => {
+    movingRef.current = vehiclesMoving;
+  }, [vehiclesMoving]);
+  const onFps = useCallback((fps: number) => {
+    if (!movingRef.current) return;
+    if (fps < 45) {
+      highSamples.current = 0;
+      lowSamples.current += 1;
+      if (lowSamples.current >= 2) {
+        lowSamples.current = 0;
+        setQuality((q) => (q < 2 ? ((q + 1) as 0 | 1 | 2) : q));
+      }
+    } else if (fps >= 55) {
+      lowSamples.current = 0;
+      highSamples.current += 1;
+      if (highSamples.current >= 5) {
+        highSamples.current = 0;
+        setQuality((q) => (q > 0 ? ((q - 1) as 0 | 1 | 2) : q));
+      }
+    } else {
+      lowSamples.current = 0;
+      highSamples.current = 0;
+    }
+  }, []);
+  const shownVehicles = vehicles && quality === 2 ? { ...vehicles, colors: vehicles.colors.slice(0, 150) } : vehicles;
+  // Reduced motion means no vehicles at all (AT 28), not parked ones.
+  const sceneVehicles = reducedMotion ? null : shownVehicles;
   const sampled = samplingText(useBlockSampling(state.at ? null : flow.data));
   const byVolume = city.data?.district.ranked_by === "volume_24h_usd";
 
@@ -75,7 +116,7 @@ export function CityView({ state, onChange, onInfo, notice }: { state: ViewState
 
   return (
     <div ref={stage} className={`relative min-h-0 overflow-hidden ${hovered ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}`}>
-      {gl === "ok" ? (
+      {gl === "ok" && view === "scene" ? (
         <CityScene
           key={sceneKey}
           buildings={buildings}
@@ -88,19 +129,25 @@ export function CityView({ state, onChange, onInfo, notice }: { state: ViewState
           reducedMotion={reducedMotion}
           onSelect={select}
           onHover={onHover}
-          onContextLost={() => setGl("lost")}
-          vehicles={vehicles}
+          onContextLost={() => {
+            if (viewRef.current === "scene") setGl("lost");
+          }}
+          vehicles={sceneVehicles}
           vehiclesMoving={vehiclesMoving}
+          quality={quality}
+          onFps={onFps}
         />
       ) : null}
 
-      {gl === "none" || gl === "lost" ? (
+      {view === "table" || gl === "none" || gl === "lost" ? (
         <div className="absolute inset-0 overflow-auto p-6 pt-16">
-          <h3 className="mb-1 font-display text-[22px] font-bold">{gl === "none" ? "3D is unavailable in this browser" : "The 3D view stopped"}</h3>
+          <h3 className="mb-1 font-display text-[22px] font-bold">{gl === "none" ? "3D is unavailable in this browser" : gl === "lost" ? "The 3D view stopped" : "Table view"}</h3>
           <p className="mb-4 max-w-[60ch] text-mute">
             {gl === "none"
               ? "WebGL could not start. The same buildings are shown below as bars: length is the selected metric, color is the average fee."
-              : "The graphics context was lost. The same buildings are shown below as bars until 3D is restarted."}
+              : gl === "lost"
+                ? "The graphics context was lost. The same buildings are shown below as bars until 3D is restarted."
+                : "The same buildings as bars: length is the selected metric, color is the average fee. Click a bar to inspect it."}
           </p>
           {gl === "lost" ? (
             <button
@@ -119,21 +166,38 @@ export function CityView({ state, onChange, onInfo, notice }: { state: ViewState
       ) : null}
 
       {gl === "ok" ? (
-        <div className="absolute top-3.5 right-3.5 z-30 flex overflow-hidden rounded-[3px] border border-line bg-panel" role="group" aria-label="Camera">
-          {(["angle", "top", "street"] as const).map((p) => (
-            <button
-              key={p}
-              type="button"
-              aria-pressed={state.cam === p}
-              onClick={() => {
-                onChange({ cam: p });
-                setPresetNonce((n) => n + 1);
-              }}
-              className={`border-r border-line px-[11px] py-1.5 text-[12px] capitalize last:border-r-0 ${state.cam === p ? "bg-panel2 text-accent" : "text-mute hover:text-text"}`}
-            >
-              {p}
-            </button>
-          ))}
+        <div className="absolute top-3.5 right-3.5 z-30 flex gap-2">
+          <div className="flex overflow-hidden rounded-[3px] border border-line bg-panel" role="group" aria-label="View">
+            {(["scene", "table"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={view === v}
+                onClick={() => setView(v)}
+                className={`border-r border-line px-[11px] py-1.5 text-[12px] last:border-r-0 ${view === v ? "bg-panel2 text-accent" : "text-mute hover:text-text"}`}
+              >
+                {v === "scene" ? "3D" : "Table"}
+              </button>
+            ))}
+          </div>
+          {view === "scene" ? (
+            <div className="flex overflow-hidden rounded-[3px] border border-line bg-panel" role="group" aria-label="Camera">
+              {(["angle", "top", "street"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  aria-pressed={state.cam === p}
+                  onClick={() => {
+                    onChange({ cam: p });
+                    setPresetNonce((n) => n + 1);
+                  }}
+                  className={`border-r border-line px-[11px] py-1.5 text-[12px] capitalize last:border-r-0 ${state.cam === p ? "bg-panel2 text-accent" : "text-mute hover:text-text"}`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -161,15 +225,20 @@ export function CityView({ state, onChange, onInfo, notice }: { state: ViewState
               : "Back plate: Pons district. No Pons token moved in this window."}
           </div>
         ) : null}
-        {vehicles && gl === "ok" ? (
+        {!reducedMotion && shownVehicles && gl === "ok" && view === "scene" ? (
           <div className="mt-1">
-            Vehicles: the {vehicles.colors.length} newest transactions, read live from RPC; color is the fee{vehiclesMoving ? ", speed follows TPS" : ""}.{sampled ? ` ${sampled}.` : ""}
+            Vehicles: the {shownVehicles.colors.length} newest transactions, read live from RPC; color is the fee{vehiclesMoving ? ", speed follows TPS" : ""}.{sampled ? ` ${sampled}.` : ""}
+          </div>
+        ) : null}
+        {quality > 0 && gl === "ok" && view === "scene" ? (
+          <div className="mt-1">
+            Quality reduced: {quality === 1 ? "lower resolution" : "lower resolution and fewer vehicles"} (the frame rate stayed under 45 fps). It recovers when the frame rate is stable.
           </div>
         ) : null}
         {metric === "fail_rate" && tokenCount > 0 ? <div className="mt-1">Tokens have no fail rate: failed transactions move no tokens.</div> : null}
       </div>
 
-      {gl === "ok" ? (
+      {gl === "ok" && view === "scene" ? (
         <div className="pointer-events-none absolute bottom-2.5 left-1/2 z-30 -translate-x-1/2 text-[11px] text-mute">Drag to orbit. Scroll to zoom. Click a building or its label to inspect it.</div>
       ) : null}
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isLensKey, isShortWindow, NO_FILTERS, normalize, parseViewState, rawFilterCount, serializeViewState, type LensKey, type ViewState } from "../../lib/view-state.ts";
 import { CityView } from "../city/CityView.tsx";
@@ -15,7 +15,7 @@ import { SplitView, type SplitInspect } from "../split/SplitView.tsx";
 import { WorkspacePanel } from "../panel/WorkspacePanel.tsx";
 import type { Chip, StageInfo } from "../stage.tsx";
 import { TerrainView } from "../terrain/TerrainView.tsx";
-import { LensRail } from "./LensRail.tsx";
+import { LensRail, RAIL_LENSES } from "./LensRail.tsx";
 
 // The workspace at /lens/[name] (PROJECT.md 7; KL-21): rail, toolbar, lens stage, time scrubber and side panel.
 // Every choice lives in the URL (PROJECT.md 11.2, 11.5; AT 9): the path names the lens, the query holds the rest.
@@ -24,6 +24,7 @@ import { LensRail } from "./LensRail.tsx";
 export function Workspace({ lens }: { lens: string }) {
   const built: LensKey | null = isLensKey(lens) ? lens : null;
   const params = useSearchParams();
+  const router = useRouter();
   const [state, setState] = useState<ViewState>(() => parseViewState(new URLSearchParams(params.toString()), built ?? "city"));
   const [info, setInfo] = useState<StageInfo | null>(null);
   const [splitInspect, setSplitInspect] = useState<SplitInspect | null>(null);
@@ -50,6 +51,25 @@ export function Workspace({ lens }: { lens: string }) {
   const onChange = useCallback((patch: Partial<ViewState>) => setState((s) => normalize({ ...s, ...patch })), []);
   const onInfo = useCallback((i: StageInfo) => setInfo((prev) => (prev && prev.coverage.first === i.coverage.first && prev.coverage.last === i.coverage.last && prev.subsidy_end === i.subsidy_end ? prev : i)), []);
   const onAt = useCallback((at: string | null) => setState((s) => normalize({ ...s, at })), []);
+
+  // Keys 1 to 7 switch lenses (PROJECT.md 19; Phase 13, the prototype's order); typing in a field is never hijacked.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable) return;
+      const index = Number.parseInt(e.key, 10);
+      if (!Number.isInteger(index) || index < 1 || index > RAIL_LENSES.length) return;
+      const next = RAIL_LENSES[index - 1]?.key;
+      if (!next || next === built) return;
+      e.preventDefault();
+      const query = serializeViewState(state, false).toString();
+      router.push(`/lens/${next}${query ? `?${query}` : ""}`);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [built, state, router]);
 
   // A window longer than 24 h drops the raw-only filters (KL-20); say so instead of losing them silently (gate F27).
   const [notice, setNotice] = useState<Chip | null>(null);

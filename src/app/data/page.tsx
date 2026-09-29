@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { sql } from "drizzle-orm";
 import { ProfileShell, Section } from "../../components/profile/Profile.tsx";
 import { blocksPerDay } from "../../engine/subsidy.ts";
+import { crossCheck } from "../../server/cross-check.ts";
 import { EXPORT_DATASETS } from "../../server/export-datasets.ts";
 import { getDb } from "../../server/http.ts";
 import { getHealth } from "../../server/health.ts";
@@ -45,13 +46,14 @@ function etaText(seconds: number | null): string {
 
 export default async function DataPage() {
   const db = getDb();
-  const [health, perDay, daily] = await Promise.all([
+  const [health, perDay, daily, xcheck] = await Promise.all([
     getHealth().catch(() => null),
     blocksPerDay(db).catch(() => null),
     rows(db, sql`
       SELECT to_char(date_trunc('day', b.ts AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
              count(*) AS blocks, coalesce(sum(b.tx_count), 0) AS txs
       FROM blocks b WHERE b.ts >= now() - interval '30 days' GROUP BY 1 ORDER BY 1 DESC`),
+    crossCheck(db, { days: 7 }).catch(() => null),
   ]);
   const c = health?.collector ?? null;
   const cov = daily.map((d) => {
@@ -143,6 +145,41 @@ export default async function DataPage() {
         <p className="mt-2 max-w-[92ch] text-[11px] text-mute">
           Days brought in by the sampled backfill (KL-28) read about 12 slices of 30 blocks each, so their share is far under 1%; rates and shares computed per block stay representative, totals are estimates and every view says so.
         </p>
+      </Section>
+
+      <Section title="Accuracy cross-check" note="Estimated day totals against a uniform random sample over RPC and growthepie's per-day count (PROJECT.md 19, AT 6; KL-37).">
+        {xcheck === null ? (
+          <p className="text-[12px] text-mute">The cross-check could not be read right now.</p>
+        ) : (
+          <>
+            <table className={`${table} max-w-[900px]`}>
+              <thead>
+                <tr>
+                  {["Day", "Stored estimate", "±95%", "growthepie", "Stored vs growthepie", "ArbOS share"].map((h, i) => (
+                    <th key={h} scope="col" className={`${th} ${i > 0 ? "text-right" : ""}`}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {xcheck.days.map((d) => (
+                  <tr key={d.day}>
+                    <td className={`${td} font-mono`}>{d.day}</td>
+                    <td className={`${td} text-right font-mono`}>{int.format(d.stored.estimate)}</td>
+                    <td className={`${td} text-right font-mono text-mute`}>±{int.format(d.stored.ci95)}</td>
+                    <td className={`${td} text-right font-mono`}>{d.growthepie === null ? NA : int.format(d.growthepie)}</td>
+                    <td className={`${td} text-right font-mono`}>{d.storedVsGtpPct === null ? NA : `${d.storedVsGtpPct >= 0 ? "+" : ""}${(d.storedVsGtpPct * 100).toFixed(1)}%`}</td>
+                    <td className={`${td} text-right font-mono`}>{d.arbosShare === null ? NA : `${(d.arbosShare * 100).toFixed(2)}%`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-2 max-w-[92ch] text-[11px] text-mute">
+              The reference is an independent uniform random sample of single blocks over RPC (<code className="font-mono">eth_getBlockTransactionCountByNumber</code>, n = 1,000 a day, ±95% 4 to 9%); the full run of 2026-09-29 measured the stored estimates 5.1% to 254.7% above it (mean +90.9%), while the reference itself sat +4.6% from growthepie, in step with the ArbOS share shown. The stored sample days use fixed-offset 3-second slices (KL-28) and overestimate: the difference is reported as it is (KL-37; option (c), user decision 2026-09-29). Re-run the dense check with <code className="font-mono">npm run cross-verify</code>.
+            </p>
+          </>
+        )}
       </Section>
 
       <Section title="Dataset catalog" note="The stored tables and what fills them.">

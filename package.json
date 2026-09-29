@@ -16,7 +16,9 @@
     "backfill": "node --env-file=.env src/collector/backfill.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "verify:sources": "node scripts/verify-sources.ts"
+    "verify:sources": "node scripts/verify-sources.ts",
+    "cross-verify": "node --env-file=.env scripts/cross-verify-stats.ts",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@react-three/drei": "10.7.9",
@@ -33,6 +35,7 @@
     "viem": "2.56.9"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "4.3.3",
     "@types/d3-force": "3.0.10",
     "@types/node": "26.6.3",

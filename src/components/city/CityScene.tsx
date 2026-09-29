@@ -45,12 +45,32 @@ type SceneProps = {
   onContextLost: () => void;
   vehicles: VehicleSet | null;
   vehiclesMoving: boolean;
+  // Automatic quality reduction (PROJECT.md 24.6, AT 29; Phase 13): 0 full, 1 lower DPR, 2 fewer vehicles. The scene
+  // reports its measured frame rate once a second while it animates, so the view can step the level.
+  quality?: 0 | 1 | 2;
+  onFps?: (fps: number) => void;
   // Split lens (Phase 8 D4): the value under each label, the buildings marked as the largest changes, and a camera
   // shared with the other pane.
   valueLabels?: string[];
   marked?: number[];
   cameraSync?: CameraSync;
 };
+
+// One frame-rate number per second while the scene renders; a passive component, no DOM.
+function FpsSampler({ onFps }: { onFps: (fps: number) => void }) {
+  const acc = useRef({ frames: 0, t: 0 });
+  useFrame((_, dt) => {
+    const a = acc.current;
+    a.frames += 1;
+    a.t += dt;
+    if (a.t >= 1) {
+      onFps(a.frames / a.t);
+      a.frames = 0;
+      a.t = 0;
+    }
+  });
+  return null;
+}
 
 function SyncCamera({ sync }: { sync: CameraSync }) {
   const camera = useThree((s) => s.camera);
@@ -359,7 +379,7 @@ export default function CityScene(props: SceneProps) {
       // The scene is static until the data or the camera changes, so frames render only on demand.
       frameloop="demand"
       flat
-      dpr={[1, 2]}
+      dpr={[1, (props.quality ?? 0) === 0 ? 2 : (props.quality ?? 0) === 1 ? 1.5 : 1]}
       camera={{ fov: 45, near: 0.1, far: 200, position: presetPosition("angle").toArray() }}
       gl={{ antialias: true, preserveDrawingBuffer: true }}
       onCreated={({ gl }) => {
@@ -388,6 +408,7 @@ export default function CityScene(props: SceneProps) {
       <OrbitControls makeDefault target={TARGET.toArray()} enablePan={false} enableDamping={false} minDistance={10} maxDistance={70} minPolarAngle={0.1} maxPolarAngle={1.5} />
       <CameraRig preset={props.preset} nonce={props.presetNonce} reducedMotion={props.reducedMotion} />
       {props.cameraSync ? <SyncCamera sync={props.cameraSync} /> : null}
+      {props.onFps ? <FpsSampler onFps={props.onFps} /> : null}
     </Canvas>
   );
 }

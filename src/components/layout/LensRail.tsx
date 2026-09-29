@@ -35,7 +35,7 @@ function Icon({ lens }: { lens: RailLens }) {
 export function LensRail({ active, query }: { active: string; query: string }) {
   return (
     <nav className="flex flex-col border-r border-line bg-panel py-2" aria-label="Lenses">
-      {RAIL_LENSES.map((lens) => {
+      {RAIL_LENSES.map((lens, index) => {
         const selected = lens.key === active;
         // "Launchpad" is wider than the 64 px rail at the prototype's 0.06em tracking, so long labels drop it.
         const tracking = lens.label.length > 7 ? "tracking-normal" : "tracking-[0.06em]";
@@ -45,7 +45,8 @@ export function LensRail({ active, query }: { active: string; query: string }) {
             key={lens.key}
             href={`/lens/${lens.key}${query ? `?${query}` : ""}`}
             aria-current={selected ? "page" : undefined}
-            title={lens.label}
+            aria-keyshortcuts={String(index + 1)}
+            title={`${lens.label} (${index + 1})`}
             className={`${base} ${selected ? "text-accent before:absolute before:top-2.5 before:bottom-2.5 before:left-0 before:w-[3px] before:bg-accent" : "text-mute hover:text-text"}`}
           >
             <Icon lens={lens} />

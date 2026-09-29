@@ -24,6 +24,7 @@ node_modules/
 /coverage
 .vitest/
 .playwright-mcp/
+playwright-report/
 
 # TypeScript
 *.tsbuildinfo
