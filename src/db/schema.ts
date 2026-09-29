@@ -100,6 +100,10 @@ export const tokenTransfers = pgTable(
     index("idx_transfers_token_ts").on(t.tokenAddress, t.ts.desc()),
     index("idx_transfers_tx").on(t.txHash),
     uniqueIndex("uq_transfers_log").on(t.txHash, t.logIndex),
+    // Graph lens and wallet ego graph (Phase 9): transfers in a window, and one address's transfers.
+    index("idx_transfers_ts").on(t.ts.desc()),
+    index("idx_transfers_from").on(t.fromAddress, t.ts.desc()),
+    index("idx_transfers_to").on(t.toAddress, t.ts.desc()),
   ],
 );
 

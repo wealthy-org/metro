@@ -3,7 +3,8 @@ import { ARBOS_SENDER, EXPLORER_URL } from "../../config/known-contracts.ts";
 import type { Db } from "../db/client.ts";
 import type { CityResponse, CityWindowInfo, InspectorResponse, InspectorSample } from "../lib/api-types.ts";
 import { actionLabel, CITY_ACTIONS, CITY_WINDOWS, isCityAction, MAX_TOKEN_BUILDINGS, RAW_WINDOW_MAX_SECONDS, type CityBuilding, type CityWindow } from "../lib/city.ts";
-import { isoMinuteDate, NO_FILTERS, rawFilterCount, type Filters } from "../lib/view-state.ts";
+import { GRAPH_WINDOW_REASON, isShortWindow, isoMinuteDate, NO_FILTERS, rawFilterCount, type Filters } from "../lib/view-state.ts";
+import type { CodeReader } from "./code.ts";
 import { anchorAt, coverage, filterKey, parseDataParams, subsidyEnd, txFilter } from "./filters.ts";
 import { tokenMarkets } from "./gecko.ts";
 import { cachedRows, iso, isoDay, num, numOrNull, rows, type Row } from "./query.ts";
@@ -208,19 +209,22 @@ export async function getCity(db: Db, window: CityWindow, anchor?: Date | null, 
   };
 }
 
-export type InspectorParams = { kind: "action" | "token" | "hour"; key: string; window: CityWindow; filters: Filters; at: string | null };
+export type InspectorParams = { kind: "action" | "token" | "hour" | "address"; key: string; window: CityWindow; filters: Filters; at: string | null };
 
 export function parseInspectorParams(params: URLSearchParams): InspectorParams | string {
   const kind = params.get("kind");
   const rawKey = params.get("key") ?? "";
   const key = kind === "hour" ? rawKey : rawKey.toLowerCase();
-  if (kind !== "action" && kind !== "token" && kind !== "hour") return "kind must be action, token or hour";
+  if (kind !== "action" && kind !== "token" && kind !== "hour" && kind !== "address") return "kind must be action, token, hour or address";
   if (kind === "action" && !isCityAction(key)) return `key must be one of ${CITY_ACTIONS.map((a) => a.key).join(", ")}`;
   if (kind === "token" && !/^0x[0-9a-f]{40}$/.test(key)) return "key must be a token address";
+  if (kind === "address" && !/^0x[0-9a-f]{40}$/.test(key)) return "key must be an address";
   if (kind === "hour" && !/^\d{4}-\d{2}-\d{2}T\d{2}:00Z$/.test(key)) return "key must be a UTC hour such as 2026-09-27T15:00Z";
   if (kind === "hour" && !Number.isFinite(isoMinuteDate(key).getTime())) return "key must be a UTC hour such as 2026-09-27T15:00Z";
   const data = parseDataParams(params);
   if (typeof data === "string") return data;
+  // An address reads raw rows only (Graph, Phase 9 D2).
+  if (kind === "address" && !isShortWindow(data.window)) return GRAPH_WINDOW_REASON;
   return { kind, key, ...data };
 }
 
@@ -238,6 +242,10 @@ async function trend(db: Db, p: InspectorParams, r: Range): Promise<InspectorRes
       SELECT ${bin(sql`tt.ts`)} AS ts, count(DISTINCT tt.tx_hash) AS n
       FROM token_transfers tt JOIN txs t ON t.hash = tt.tx_hash AND t.ts = tt.ts
       WHERE tt.token_address = ${p.key} AND ${txTime(r, sql`tt.ts`)} ${txFilter({ ...f, token: null }, "t")} GROUP BY 1 ORDER BY 1`);
+  } else if (p.kind === "address") {
+    out = await rows(db, sql`
+      SELECT ${bin(sql`txs.ts`)} AS ts, count(*) AS n FROM txs JOIN ${involving(p.key, r)} m ON m.hash = txs.hash AND m.ts = txs.ts
+      WHERE ${txTime(r, sql`txs.ts`)} ${txFilter(f, "txs")} GROUP BY 1 ORDER BY 1`);
   } else if (p.kind === "hour" || rawFilterCount(f) > 0) {
     const only = p.kind === "action" ? sql`AND txs.action = ${p.key}` : sql``;
     out = await rows(db, sql`
@@ -265,7 +273,11 @@ async function samples(db: Db, p: InspectorParams, r: Range): Promise<InspectorS
           FROM token_transfers tt JOIN txs t ON t.hash = tt.tx_hash AND t.ts = tt.ts
           WHERE tt.token_address = ${p.key} AND ${txTime(r, sql`tt.ts`)} ${txFilter({ ...f, token: null }, "t")}
           ORDER BY t.ts DESC, t.hash LIMIT 5`)
-      : await rows(db, sql`
+      : p.kind === "address"
+        ? await rows(db, sql`
+            SELECT txs.hash, txs.block, txs.ts, txs.fee_usd, txs.status FROM txs JOIN ${involving(p.key, r)} m ON m.hash = txs.hash AND m.ts = txs.ts
+            WHERE ${txTime(r, sql`txs.ts`)} ${txFilter(f, "txs")} ORDER BY txs.ts DESC, txs.hash LIMIT 5`)
+        : await rows(db, sql`
           SELECT hash, block, ts, fee_usd, status FROM txs
           WHERE ${txTime(r, sql`ts`)} ${p.kind === "action" ? sql`AND txs.action = ${p.key}` : sql``} ${txFilter(f, "txs")}
           ORDER BY ts DESC, hash LIMIT 5`);
@@ -320,7 +332,7 @@ export async function medianFee(db: Db, r: Range, f: Filters, subject: { kind: "
 }
 
 // Returns null when a token address is not a known Pons token.
-export async function getInspector(db: Db, p: InspectorParams, anchor?: Date | null): Promise<InspectorResponse | null> {
+export async function getInspector(db: Db, p: InspectorParams, anchor?: Date | null, code?: CodeReader): Promise<InspectorResponse | null> {
   let token: InspectorResponse["token"] = null;
   if (p.kind === "token") {
     const [t] = await rows(db, sql`
@@ -338,7 +350,7 @@ export async function getInspector(db: Db, p: InspectorParams, anchor?: Date | n
       launch_ts: iso(t.ts),
     };
   }
-  const label = p.kind === "action" ? actionLabel(p.key) : p.kind === "hour" ? hourLabel(p.key) : tokenLabel({ key: p.key, symbol: token?.symbol ?? null });
+  const label = p.kind === "action" ? actionLabel(p.key) : p.kind === "hour" ? hourLabel(p.key) : p.kind === "address" ? `${p.key.slice(0, 6)}…${p.key.slice(-4)}` : tokenLabel({ key: p.key, symbol: token?.symbol ?? null });
   const at = anchor === undefined ? await anchorAt(db, p.at) : anchor;
   const base = { kind: p.kind, key: p.key, label, filters: p.filters, token, breakdown: null };
   const empty = { tx_count: 0, gas_volume: 0, avg_fee_usd: null, median_fee_usd: null, wallets: null, fail_rate: null, paid_share: null };
@@ -377,6 +389,8 @@ export async function getInspector(db: Db, p: InspectorParams, anchor?: Date | n
     };
   }
 
+  if (p.kind === "address") return addressInspector(db, p, at, base, code);
+
   const r = resolveRange(p.window, at);
   const prev = previousRange(r);
   const stats = (range: Range, withRaw: boolean) =>
@@ -406,6 +420,56 @@ export async function getInspector(db: Db, p: InspectorParams, anchor?: Date | n
     previous: prevN === null ? null : { tx_count: prevN, change: prevN > 0 ? (n - prevN) / prevN : null },
     trend: tr,
     samples: sm,
+    generated_at: new Date().toISOString(),
+  };
+}
+
+// Transactions that involve an address: it sent or received them, or a token moved from or to it (a pool never sends a
+// transaction of its own). Three index lookups instead of one OR over the window.
+const involving = (a: string, r: Range) => sql`(
+  SELECT hash, ts FROM txs WHERE ${txTime(r, sql`ts`)} AND from_address = ${a}
+  UNION SELECT hash, ts FROM txs WHERE ${txTime(r, sql`ts`)} AND to_address = ${a}
+  UNION SELECT tx_hash, ts FROM token_transfers WHERE ${txTime(r, sql`ts`)} AND from_address = ${a}
+  UNION SELECT tx_hash, ts FROM token_transfers WHERE ${txTime(r, sql`ts`)} AND to_address = ${a})`;
+
+// One address from the Graph (Phase 9): transactions that involve it in the window, fees and failures as sender.
+async function addressInspector(db: Db, p: InspectorParams, at: Date, base: Omit<InspectorResponse, "window" | "values" | "previous" | "trend" | "samples" | "generated_at">, code?: CodeReader): Promise<InspectorResponse> {
+  const r = resolveRange(p.window, at);
+  const prev = previousRange(r);
+  // graph.ts imports this module; loading it here on demand avoids an import cycle at startup.
+  const { addressFacts } = await import("./graph.ts");
+  const one = (range: Range) =>
+    rows(db, sql`
+      SELECT count(*) AS n, count(*) FILTER (WHERE from_address = ${p.key}) AS sent, count(*) FILTER (WHERE to_address = ${p.key}) AS received,
+             coalesce(sum(gas_used) FILTER (WHERE from_address = ${p.key}), 0) AS gas, avg(fee_usd) FILTER (WHERE from_address = ${p.key}) AS fee,
+             sum(fee_usd) FILTER (WHERE from_address = ${p.key}) AS fee_sum,
+             percentile_disc(0.5) WITHIN GROUP (ORDER BY fee_usd) FILTER (WHERE from_address = ${p.key}) AS med,
+             count(*) FILTER (WHERE from_address = ${p.key} AND status = 0) AS failed,
+             count(*) FILTER (WHERE from_address = ${p.key} AND subsidy_class = 'likely_paid') AS paid,
+             count(*) FILTER (WHERE to_address = ${p.key} AND value > 0 AND status = 1) AS nat_in, count(*) FILTER (WHERE from_address = ${p.key} AND value > 0 AND status = 1) AS nat_out
+      FROM txs JOIN ${involving(p.key, range)} m ON m.hash = txs.hash AND m.ts = txs.ts
+      WHERE ${txTime(range, sql`txs.ts`)} ${txFilter(p.filters, "txs")}`);
+  const [[now], prevRows, tr, sm, info] = await Promise.all([one(r), prev ? one(prev) : Promise.resolve(null), trend(db, p, r), samples(db, p, r), addressFacts(db, p.key, r, p.filters, code)]);
+  const n = num(now?.n);
+  const sent = num(now?.sent);
+  const prevN = prevRows ? num(prevRows[0]?.n) : null;
+  return {
+    ...base,
+    label: info.label ?? base.label,
+    window: windowInfo(p.window, r, null, at),
+    values: {
+      tx_count: n,
+      gas_volume: num(now?.gas),
+      avg_fee_usd: sent ? numOrNull(now?.fee) : null,
+      median_fee_usd: sent ? numOrNull(now?.med) : null,
+      wallets: null,
+      fail_rate: sent ? num(now?.failed) / sent : null,
+      paid_share: sent ? num(now?.paid) / sent : null,
+    },
+    previous: prevN === null ? null : { tx_count: prevN, change: prevN > 0 ? (n - prevN) / prevN : null },
+    trend: tr,
+    samples: sm,
+    address: { kind: info.kind, label: info.label, sent, received: num(now?.received), native_transfers: { in: num(now?.nat_in), out: num(now?.nat_out) }, token_transfers: info.token_transfers, fee_paid_usd: sent ? numOrNull(now?.fee_sum) : null, group: info.group },
     generated_at: new Date().toISOString(),
   };
 }

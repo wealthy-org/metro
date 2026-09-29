@@ -4,7 +4,7 @@
 
 import { CITY_METRICS, CITY_WINDOWS, isCityAction, isCityWindow, RAW_WINDOW_MAX_SECONDS, type CityActionKey, type CityWindow } from "./city.ts";
 
-export const LENS_KEYS = ["city", "terrain", "heatmap", "flow", "launchpad", "split"] as const;
+export const LENS_KEYS = ["city", "terrain", "heatmap", "flow", "launchpad", "split", "graph"] as const;
 export type LensKey = (typeof LENS_KEYS)[number];
 export const isLensKey = (v: string): v is LensKey => (LENS_KEYS as readonly string[]).includes(v);
 
@@ -33,7 +33,7 @@ export type Filters = {
 };
 export const NO_FILTERS: Filters = { action: null, token: null, minValue: null, wallet: null, status: null };
 
-export type Selection = { kind: "action"; key: string } | { kind: "token"; key: string } | { kind: "hour"; key: string } | null;
+export type Selection = { kind: "action"; key: string } | { kind: "token"; key: string } | { kind: "hour"; key: string } | { kind: "address"; key: string } | null;
 export type CameraPreset = "angle" | "top" | "street";
 export type TerrainRows = "actions" | "tokens";
 export type HeatmapMode = "days" | "compare";
@@ -42,6 +42,12 @@ export type HeatmapMode = "days" | "compare";
 export type SplitMode = "windows" | "tokens";
 export type SplitState = { cmp: SplitMode; before: string | null; after: string | null; ta: string | null; tb: string | null };
 export const NO_SPLIT: SplitState = { cmp: "windows", before: null, after: null, ta: null, tb: null };
+// Graph lens (PROJECT.md 10.4; Phase 9): top clusters, the ego graph of one address (1 or 2 hops), or the flow of one
+// token. Raw rows only, so windows of 24 h or less (Phase 9 D2).
+export type GraphMode = "top" | "ego" | "token";
+export type GraphState = { mode: GraphMode; addr: string | null; token: string | null; hops: 1 | 2 };
+export const NO_GRAPH: GraphState = { mode: "top", addr: null, token: null, hops: 1 };
+export const GRAPH_WINDOW_REASON = "The Graph reads raw transfers, so it covers windows of 24 h or less";
 
 export type ViewState = {
   lens: LensKey;
@@ -56,6 +62,7 @@ export type ViewState = {
   rows: TerrainRows;
   mode: HeatmapMode;
   split: SplitState;
+  graph: GraphState;
 };
 
 export const DEFAULT_VIEW: ViewState = {
@@ -70,6 +77,7 @@ export const DEFAULT_VIEW: ViewState = {
   rows: "actions",
   mode: "days",
   split: NO_SPLIT,
+  graph: NO_GRAPH,
 };
 
 export const MAX_MARKS = 5;
@@ -121,6 +129,8 @@ export function metricIssue(lens: LensKey, metric: Metric, window: CityWindow): 
   const short = isShortWindow(window);
   // Flow colors by fee and Launchpad sorts by column: the Metric choice does not apply to them.
   if (lens === "flow" || lens === "launchpad") return null;
+  // Graph node size (Phase 9): per-address figures only; color is already the average fee (D3).
+  if (lens === "graph") return metric === "tx_count" || metric === "gas_volume" || metric === "fail_rate" ? null : "Not a per-address figure in the Graph; node color already shows the average fee";
   if (metric === "gas_price") return lens === "heatmap" ? null : "Gas price is chain-wide; it is shown in the Heatmap";
   if (lens === "heatmap" && (metric === "wallets" || metric === "fail_rate")) return "Not available per hour cell: the hourly rollups have no distinct wallets or failures";
   if (metric === "wallets" && !short) return "Wallets are counted for windows of 24 h or less";
@@ -136,6 +146,7 @@ export const rawFiltersAllowed = (s: Pick<ViewState, "lens" | "window">) => s.le
 
 // Drops anything the current lens and window cannot show, so parse(serialize(s)) is stable.
 export function normalize(s: ViewState): ViewState {
+  if (s.lens === "graph" && !isShortWindow(s.window)) s = { ...s, window: "24h" };
   const short = isShortWindow(s.window);
   const metric = metricIssue(s.lens, s.metric, s.window) ? "tx_count" : s.metric;
   const filters: Filters = rawFiltersAllowed(s) ? s.filters : { ...NO_FILTERS, action: s.filters.action };
@@ -162,6 +173,7 @@ export function parseViewState(params: URLSearchParams, lens?: LensKey): ViewSta
   const [kind, key] = sep > 0 ? [selRaw.slice(0, sep), selRaw.slice(sep + 1).toLowerCase()] : ["", ""];
   if (kind === "action" && isCityAction(key)) sel = { kind, key };
   else if (kind === "token" && ADDRESS.test(key)) sel = { kind, key };
+  else if (kind === "address" && ADDRESS.test(key)) sel = { kind, key };
   else if (kind === "hour") {
     const h = parseHour(selRaw.slice(sep + 1));
     if (h) sel = { kind, key: h };
@@ -193,6 +205,12 @@ export function parseViewState(params: URLSearchParams, lens?: LensKey): ViewSta
       ta: ADDRESS.test((get("ta") ?? "").toLowerCase()) ? (get("ta") ?? "").toLowerCase() : null,
       tb: ADDRESS.test((get("tb") ?? "").toLowerCase()) ? (get("tb") ?? "").toLowerCase() : null,
     },
+    graph: {
+      mode: get("gmode") === "ego" ? "ego" : get("gmode") === "token" ? "token" : "top",
+      addr: ADDRESS.test((get("addr") ?? "").toLowerCase()) ? (get("addr") ?? "").toLowerCase() : null,
+      token: ADDRESS.test((get("gtoken") ?? "").toLowerCase()) ? (get("gtoken") ?? "").toLowerCase() : null,
+      hops: get("hops") === "2" ? 2 : 1,
+    },
   });
 }
 
@@ -220,6 +238,10 @@ export function serializeViewState(s: ViewState, includeLens = true): URLSearchP
   if (n.split.after) p.set("after", n.split.after);
   if (n.split.ta) p.set("ta", n.split.ta);
   if (n.split.tb) p.set("tb", n.split.tb);
+  if (n.graph.mode !== "top") p.set("gmode", n.graph.mode);
+  if (n.graph.addr) p.set("addr", n.graph.addr);
+  if (n.graph.token) p.set("gtoken", n.graph.token);
+  if (n.graph.hops !== 1) p.set("hops", String(n.graph.hops));
   return p;
 }
 

@@ -5,6 +5,7 @@ import { useEffect, useState, type KeyboardEvent } from "react";
 import type { InsightsResponse, InsightT, InspectorResponse } from "../../lib/api-types.ts";
 import { CITY_WINDOWS, formatMetric } from "../../lib/city.ts";
 import { formatAge, NA, shortHex as shortHash, utcMinute as utc } from "../../lib/format.ts";
+import { clusterLabel } from "../../lib/graph.ts";
 import { relatedTo } from "../../lib/insight-match.ts";
 import { dataQuery, filterSummary, type ViewState } from "../../lib/view-state.ts";
 import { usePolling } from "../hooks.ts";
@@ -14,7 +15,7 @@ const POLL_MS = 15_000;
 const int = new Intl.NumberFormat("en-US");
 
 const TREND_LABEL = { "5m": "per 5 minutes", "1h": "per hour", "1d": "per day" } as const;
-const KIND_LABEL = { action: "Action type", token: "Pons token", hour: "One UTC hour" } as const;
+const KIND_LABEL = { action: "Action type", token: "Pons token", hour: "One UTC hour", address: "Address" } as const;
 
 function windowLine(d: InspectorResponse): string {
   const { start, end, basis } = d.window;
@@ -88,16 +89,39 @@ function Details({ d, onClear, related }: { d: InspectorResponse; onClear: () =>
       <H4>{d.kind === "hour" ? "Numbers in this hour" : "Numbers in this window"}</H4>
       <Kv
         rows={[
-          [d.kind === "token" ? "Transactions moving it" : "Transactions", int.format(v.tx_count)],
-          ["Wallets", v.wallets === null ? "24 h or less only" : int.format(v.wallets)],
-          ["Gas volume", formatMetric(v.gas_volume, "gas_volume")],
-          ["Avg fee (blended)", formatMetric(v.avg_fee_usd, "avg_fee_usd")],
-          ["Median fee", v.median_fee_usd === null ? (v.tx_count ? "24 h or less only" : NA) : formatMetric(v.median_fee_usd, "avg_fee_usd")],
+          [d.kind === "token" ? "Transactions moving it" : d.kind === "address" ? "Transactions involving it" : "Transactions", int.format(v.tx_count)],
+          ...(d.kind === "address" ? [] : [["Wallets", v.wallets === null ? "24 h or less only" : int.format(v.wallets)] as [string, string]]),
+          [d.kind === "address" ? "Gas used (sent)" : "Gas volume", formatMetric(v.gas_volume, "gas_volume")],
+          [d.kind === "address" ? "Avg fee paid" : "Avg fee (blended)", formatMetric(v.avg_fee_usd, "avg_fee_usd")],
+          ["Median fee", v.median_fee_usd === null ? (v.tx_count && d.kind !== "address" ? "24 h or less only" : NA) : formatMetric(v.median_fee_usd, "avg_fee_usd")],
           ["Paid share (estimate)", v.paid_share === null ? NA : `${Math.round(v.paid_share * 100)}%`],
           ["Fail rate", d.kind === "token" ? "n/a for tokens" : formatMetric(v.fail_rate, "fail_rate")],
           [d.kind === "hour" ? "Change vs previous hour" : "Change vs previous window", changeText],
         ]}
       />
+
+      {d.address ? (
+        <>
+          <H4>Address</H4>
+          <Kv
+            rows={[
+              ["Kind", d.address.kind === "contract" ? `Contract${d.address.label ? `, ${d.address.label}` : ""}` : "Address (no contract code)"],
+              ["Sent / received (transactions)", `${int.format(d.address.sent)} / ${int.format(d.address.received)}`],
+              ["ETH transfers in / out", `${int.format(d.address.native_transfers.in)} / ${int.format(d.address.native_transfers.out)}`],
+              ["Token transfers in / out", `${int.format(d.address.token_transfers.in)} / ${int.format(d.address.token_transfers.out)}`],
+              ["Fees paid", formatMetric(d.address.fee_paid_usd, "avg_fee_usd")],
+              ["Group", d.address.group ? clusterLabel(d.address.group) : "None in this window"],
+            ]}
+          />
+          <p className="mt-1.5 text-[12px] text-mute">
+            Groups are wallets that received ETH from the same address in this window; no identity is implied. More on the{" "}
+            <Link className="text-text underline decoration-mute hover:decoration-text" href={`/wallet/${d.key}`} prefetch={false}>
+              wallet profile
+            </Link>
+            .
+          </p>
+        </>
+      ) : null}
 
       {d.breakdown && d.breakdown.length ? (
         <>
@@ -173,7 +197,7 @@ function Details({ d, onClear, related }: { d: InspectorResponse; onClear: () =>
       ) : related.length ? (
         related.map((i) => <InsightCard key={i.id} insight={i} compact />)
       ) : (
-        <p className="text-[12px] text-mute">No active finding mentions this {d.kind === "hour" ? "hour" : d.kind === "token" ? "token" : "action type"}.</p>
+        <p className="text-[12px] text-mute">No active finding mentions this {d.kind === "hour" ? "hour" : d.kind === "token" ? "token" : d.kind === "address" ? "address" : "action type"}.</p>
       )}
 
       <div className="mt-4 flex gap-2">
@@ -229,7 +253,7 @@ function InspectorPane({ state, note, onClear, insights }: { state: ViewState; n
           Updating…
         </p>
       ) : null}
-      <Details d={d} onClear={onClear} related={insights === null ? null : relatedTo(insights.filter((i) => i.status === "finding"), { kind: d.kind, key: d.key })} />
+      <Details d={d} onClear={onClear} related={insights === null ? null : relatedTo(insights.filter((i) => i.status === "finding"), { kind: d.kind === "address" ? "wallet" : d.kind, key: d.key })} />
     </>
   );
 }

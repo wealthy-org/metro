@@ -57,6 +57,13 @@
       "when": 1790606607060,
       "tag": "0007_agg_day_system_tx",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790645826248,
+      "tag": "0008_transfers_graph_indexes",
+      "breakpoints": true
     }
   ]
 }

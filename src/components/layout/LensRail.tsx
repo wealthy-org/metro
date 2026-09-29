@@ -2,18 +2,17 @@ import Link from "next/link";
 
 // Lens switcher (PROJECT.md 7: vertical rail on the left). Icons from project-4-metro-prototype.html.
 // Each lens is its own route, /lens/[name] (KL-21); switching keeps the rest of the view in the query.
-// Lenses that are not built yet stay visible but disabled with a "soon" label (user decision 2026-09-27).
 
-export type RailLens = { key: string; label: string; path: string; ready: boolean };
+export type RailLens = { key: string; label: string; path: string };
 
 export const RAIL_LENSES: RailLens[] = [
-  { key: "city", label: "City", path: "M3 21V11h5v10M8 21V4h8v17M16 21v-8h5v8M2 21h20", ready: true },
-  { key: "terrain", label: "Terrain", path: "M2 20l6-11 4 6 3-4 7 9z", ready: true },
-  { key: "flow", label: "Flow", path: "M3 6h12M3 12h18M3 18h9M15 3l4 3-4 3M17 9l4 3-4 3", ready: true },
-  { key: "graph", label: "Graph", path: "", ready: false },
-  { key: "heatmap", label: "Heatmap", path: "M3 3h6v6H3zM15 3h6v6h-6zM9 9h6v6H9zM3 15h6v6H3zM15 15h6v6h-6z", ready: true },
-  { key: "launchpad", label: "Launchpad", path: "M4 21V3M4 4h13l-3 4 3 4H4", ready: true },
-  { key: "split", label: "Split", path: "M3 4h8v16H3zM13 4h8v16h-8z", ready: true },
+  { key: "city", label: "City", path: "M3 21V11h5v10M8 21V4h8v17M16 21v-8h5v8M2 21h20" },
+  { key: "terrain", label: "Terrain", path: "M2 20l6-11 4 6 3-4 7 9z" },
+  { key: "flow", label: "Flow", path: "M3 6h12M3 12h18M3 18h9M15 3l4 3-4 3M17 9l4 3-4 3" },
+  { key: "graph", label: "Graph", path: "" },
+  { key: "heatmap", label: "Heatmap", path: "M3 3h6v6H3zM15 3h6v6h-6zM9 9h6v6H9zM3 15h6v6H3zM15 15h6v6h-6z" },
+  { key: "launchpad", label: "Launchpad", path: "M4 21V3M4 4h13l-3 4 3 4H4" },
+  { key: "split", label: "Split", path: "M3 4h8v16H3zM13 4h8v16h-8z" },
 ];
 
 function Icon({ lens }: { lens: RailLens }) {
@@ -41,15 +40,6 @@ export function LensRail({ active, query }: { active: string; query: string }) {
         // "Launchpad" is wider than the 64 px rail at the prototype's 0.06em tracking, so long labels drop it.
         const tracking = lens.label.length > 7 ? "tracking-normal" : "tracking-[0.06em]";
         const base = `relative flex h-14 flex-col items-center justify-center gap-[3px] text-[10px] uppercase ${tracking}`;
-        if (!lens.ready) {
-          return (
-            <button key={lens.key} type="button" disabled aria-disabled title={`${lens.label}: coming soon`} className={`${base} cursor-not-allowed text-mute/60`}>
-              <Icon lens={lens} />
-              {lens.label}
-              <span className="text-[8px] leading-none tracking-[0.08em] text-mute">soon</span>
-            </button>
-          );
-        }
         return (
           <Link
             key={lens.key}

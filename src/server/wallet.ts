@@ -9,7 +9,7 @@ import { iso, num, numOrNull, rows } from "./query.ts";
 import { memoized, readClient } from "./rpc-read.ts";
 
 // Wallet profile (PROJECT.md 15). Activity comes from the ingested blocks only and says so; balance, sent count and
-// contract-or-EOA come from RPC. Counterparties are listed by count; the ego graph is Phase 9. No identity labels.
+// contract-or-EOA come from RPC. Counterparties are listed by count; the ego graph is in graph.ts. No identity labels.
 
 const RPC_TTL_MS = 60_000;
 

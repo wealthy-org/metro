@@ -157,7 +157,7 @@ export type HeatmapResponse = {
 
 // GET /api/inspector (PROJECT.md 11.1, 18).
 export type InspectorResponse = {
-  kind: "action" | "token" | "hour";
+  kind: "action" | "token" | "hour" | "address";
   key: string;
   label: string;
   window: CityWindowInfo;
@@ -172,6 +172,19 @@ export type InspectorResponse = {
   token: { symbol: string | null; name: string | null; creator: string | null; creator_url: string | null; launch_block: number | null; launch_ts: string | null } | null;
   // Transactions per action, for an hour; null otherwise.
   breakdown: { key: string; label: string; tx_count: number }[] | null;
+  // An address from the Graph (Phase 9): values are the transactions that involve it in the window (sent, received or a
+  // token moved from or to it); fees, gas,
+  // fail rate and paid share as sender. kind "contract" only when Metro knows it is one; group per Phase 9 D1.
+  address?: {
+    kind: "contract" | "address";
+    label: string | null;
+    sent: number;
+    received: number;
+    native_transfers: { in: number; out: number };
+    token_transfers: { in: number; out: number };
+    fee_paid_usd: number | null;
+    group: { funder: string; size: number } | null;
+  } | null;
   generated_at: string;
 };
 

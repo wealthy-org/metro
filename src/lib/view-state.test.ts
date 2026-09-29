@@ -17,6 +17,7 @@ describe("view state in the URL (PROJECT.md 11.2, AT 9)", () => {
       rows: "tokens",
       mode: "compare",
       split: { cmp: "tokens", before: "2026-09-22..2026-09-28", after: "2026-09-29..2026-10-05", ta: "0x00000000000000000000000000000000000000a1", tb: "0x00000000000000000000000000000000000000b2" },
+      graph: { mode: "ego", addr: "0x00000000000000000000000000000000000000c3", token: "0x00000000000000000000000000000000000000a1", hops: 2 },
     };
     const url = serializeViewState(s).toString();
     expect(parseViewState(q(url))).toEqual(s);
@@ -25,8 +26,18 @@ describe("view state in the URL (PROJECT.md 11.2, AT 9)", () => {
 
   it("writes nothing for the default view and drops invalid values", () => {
     expect(serializeViewState(DEFAULT_VIEW).toString()).toBe("");
-    const s = parseViewState(q("lens=graph&metric=x&window=2d&action=other&token=0x1&min_value=-1&wallet=x&status=x&sel=action:other&at=yesterday&cam=x&marks=bad"));
+    const s = parseViewState(q("lens=nope&metric=x&window=2d&action=other&token=0x1&min_value=-1&wallet=x&status=x&sel=action:other&at=yesterday&cam=x&marks=bad&gmode=x&addr=0x1&hops=3"));
     expect(s).toEqual(DEFAULT_VIEW);
+  });
+
+  it("keeps the Graph to raw windows and its own node metrics (Phase 9 D2, D3)", () => {
+    const s = parseViewState(q("window=7d&metric=avg_fee_usd&gmode=token&gtoken=0x00000000000000000000000000000000000000A1&sel=address:0x00000000000000000000000000000000000000C3"), "graph");
+    expect(s.window).toBe("24h");
+    expect(s.metric).toBe("tx_count");
+    expect(s.graph).toEqual({ mode: "token", addr: null, token: "0x00000000000000000000000000000000000000a1", hops: 1 });
+    expect(s.sel).toEqual({ kind: "address", key: "0x00000000000000000000000000000000000000c3" });
+    expect(metricIssue("graph", "gas_volume", "1h")).toBeNull();
+    expect(metricIssue("graph", "wallets", "1h")).toMatch(/per-address/);
   });
 
   it("keeps only valid, unique, sorted marks up to five", () => {

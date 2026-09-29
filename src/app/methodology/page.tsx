@@ -55,6 +55,8 @@ const LIMITS: [string, string][] = [
   ["Launchpad", "Launches newer than the ingested blocks are read from the factory's logs for display. Their holders and activity are unknown until their blocks are ingested."],
   ["Swaps on Pons curves", "Buys and sells on a Pons token's curve pool count as swaps from their CurveBuy and CurveSell events."],
   ["Block usage", "Blocks on this chain use a tiny share of their very large gas limit, so the block-usage rule is expected to find nothing."],
+  ["Graph nodes and edges", "Nodes are addresses; an edge is a native ETH transfer or a token transfer between two of them in the window. The ArbOS sender, the zero address (mints and burns) and failed transactions (they move no value) are left out. The Graph covers windows of 24 h or less and shows at most 1,500 nodes; above that it keeps the strongest neighbours and says how many it trimmed. Node color is the average fee the address paid as sender; grey means it sent nothing in the window. A node is called a contract when Metro knows it is one or when its code on the chain is not empty; the chain is asked for the 60 busiest addresses of a view, the selected address and the center of an ego graph, and any other address stays an address until then."],
+  ["Graph groups", "A ring marks wallets that received ETH by plain transfers from the same address in the window, when that address funded at least 2 wallets. It is a pattern in the ingested transfers, not an identity, and not a claim about intent. A wallet's first funder cannot be known from sampled blocks, so Metro does not use it."],
 ];
 
 function Rows({ rows }: { rows: [string, ReactNode][] }) {

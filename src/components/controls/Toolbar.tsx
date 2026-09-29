@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { CITY_ACTIONS, CITY_WINDOWS, isCityAction, type CityWindow } from "../../lib/city.ts";
-import { metricIssue, type LensKey, type Metric, type ViewState } from "../../lib/view-state.ts";
+import { GRAPH_WINDOW_REASON, isShortWindow, metricIssue, type LensKey, type Metric, type ViewState } from "../../lib/view-state.ts";
 import { FilterMenu } from "./FilterMenu.tsx";
 
 // Stage toolbar (prototype lines 79 to 85 and 204 to 221): Metric, Window and Action, plus the filters that are
@@ -31,6 +31,12 @@ const METRIC_BUTTONS: Record<LensKey, MetricButton[]> = {
   flow: [],
   launchpad: [],
   split: [],
+  // Graph node size (Phase 9 D3: color is the average fee).
+  graph: [
+    { key: "tx_count", label: "Transfers", title: "Node size: transfers sent and received in the window" },
+    { key: "gas_volume", label: "Gas", title: "Node size: gas used by the address's transactions" },
+    { key: "fail_rate", label: "Fail rate", title: "Node size: share of the address's transactions that failed" },
+  ],
 };
 
 const segButton = (on: boolean, off: boolean) =>
@@ -83,8 +89,9 @@ export function Toolbar({ lens, state, onChange, extra }: { lens: LensKey; state
       {lens !== "flow" && lens !== "split" ? (
         <select aria-label="Window" value={state.window} onChange={(e) => onChange({ window: e.target.value as CityWindow })} className={`flex-none ${selectClass}`}>
           {CITY_WINDOWS.map((w) => (
-            <option key={w.key} value={w.key}>
+            <option key={w.key} value={w.key} disabled={lens === "graph" && !isShortWindow(w.key)} title={lens === "graph" && !isShortWindow(w.key) ? GRAPH_WINDOW_REASON : undefined}>
               {w.label}
+              {lens === "graph" && !isShortWindow(w.key) ? " (24 h or less in Graph)" : ""}
             </option>
           ))}
         </select>

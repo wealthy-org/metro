@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { A, Bars, External, Facts, int, pct, ProfileShell, Section, short, Table, usd, utc } from "../../../components/profile/Profile.tsx";
+import { WalletGraph } from "../../../components/graph/WalletGraph.tsx";
+import { getWalletGraph } from "../../../server/graph.ts";
 import { getDb } from "../../../server/http.ts";
 import { getWallet } from "../../../server/wallet.ts";
 import { NA } from "../../../lib/format.ts";
 
 // Wallet profile (PROJECT.md 15): age, transactions per action, total fee paid, active hours, nearest counterparties
-// and the subsidy indicator (share of likely paid transactions, an estimate: KL-6). Public chain data only; no guessed
+// the ego graph (Phase 9) and the subsidy indicator (share of likely paid transactions, an estimate: KL-6). Public chain data only; no guessed
 // identity labels. Activity covers the ingested blocks; balance, total sent and contract-or-not are read from RPC.
 
 export const dynamic = "force-dynamic";
@@ -23,7 +25,8 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 export default async function WalletPage({ params }: Params) {
   const { address } = await params;
   if (!valid(address)) notFound();
-  const w = await getWallet(getDb(), address.toLowerCase());
+  const db = getDb();
+  const [w, graph] = await Promise.all([getWallet(db, address.toLowerCase()), getWalletGraph(db, address.toLowerCase())]);
   const g = w.ingested;
   const balance = w.chain ? Number(w.chain.balance_eth) : null;
   const seen = g.tx_count > 0;
@@ -56,7 +59,7 @@ export default async function WalletPage({ params }: Params) {
         </p>
       </div>
 
-      {seen ? (
+      {seen || graph.nodes.length > 0 ? (
         <>
           <Section title="Transactions by action" note="Transactions it sent, with the total fee per action type.">
             <Table head={["Action", "Transactions", "Fee paid"]} empty="It sent no transactions in the ingested blocks." rows={g.actions.map((a) => [a.label, int.format(a.tx_count), usd(a.fee_usd)])} />
@@ -68,7 +71,11 @@ export default async function WalletPage({ params }: Params) {
             </Section>
           ) : null}
 
-          <Section title="Nearest counterparties" note="Addresses it exchanges transactions with most often. The wallet graph lens will show the wider network.">
+          <Section title="Ego graph" note="The addresses it exchanges native or token transfers with, in the ingested blocks.">
+            <WalletGraph data={graph} />
+          </Section>
+
+          <Section title="Nearest counterparties" note="Addresses it exchanges transactions with most often. The table version of the graph above.">
             <div className="grid grid-cols-2 gap-6">
               <Table head={["Sent to", "Transactions"]} empty="Sent to: none in the ingested blocks." rows={g.counterparties.sent_to.map((c) => [<A key="a" href={`/wallet/${c.address}`}>{short(c.address)}</A>, int.format(c.tx_count)])} />
               <Table head={["Received from", "Transactions"]} empty="Received from: none in the ingested blocks." rows={g.counterparties.received_from.map((c) => [<A key="a" href={`/wallet/${c.address}`}>{short(c.address)}</A>, int.format(c.tx_count)])} />

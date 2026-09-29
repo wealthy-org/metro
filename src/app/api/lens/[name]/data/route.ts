@@ -5,6 +5,7 @@ import { getSubsidy, parseSubsidyParams } from "../../../../../server/subsidy.ts
 import { anchorAt, coverage, parseDataParams, subsidyEnd } from "../../../../../server/filters.ts";
 import { minSample } from "../../../../../engine/run.ts";
 import { getFlow } from "../../../../../server/flow.ts";
+import { getGraph, parseGraphParams } from "../../../../../server/graph.ts";
 import { getLaunchpad } from "../../../../../server/launchpad.ts";
 import { getHeatmap, heatmapIssue } from "../../../../../server/heatmap.ts";
 import { badRequest, getDb, PUBLIC_CACHE, serverError } from "../../../../../server/http.ts";
@@ -46,7 +47,7 @@ async function split(params: URLSearchParams): Promise<Response> {
   }
 }
 
-const LENSES = ["city", "terrain", "heatmap", "flow", "launchpad", "split"];
+const LENSES = ["city", "terrain", "heatmap", "flow", "launchpad", "split", "graph"];
 // The live Flow read is shared for 2 s in the server (KL-23); the CDN keeps it no longer than that.
 const LIVE_CACHE = "public, s-maxage=2, stale-while-revalidate=4";
 
@@ -59,6 +60,15 @@ export async function GET(request: Request, ctx: { params: Promise<{ name: strin
   }
   const params = new URL(request.url).searchParams;
   if (name === "split") return split(params);
+  if (name === "graph") {
+    const g = parseGraphParams(params);
+    if (typeof g === "string") return badRequest(g);
+    try {
+      return Response.json(await getGraph(getDb(), g), { headers: { "cache-control": PUBLIC_CACHE } });
+    } catch {
+      return serverError();
+    }
+  }
   const data = parseDataParams(params);
   if (typeof data === "string") return badRequest(data);
 

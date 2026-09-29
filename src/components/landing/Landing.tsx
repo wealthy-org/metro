@@ -6,6 +6,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { CityResponse, FlowResponse, HeatmapResponse, InsightsResponse, LaunchpadResponse, TerrainResponse } from "../../lib/api-types.ts";
 import type { SubsidyResponse } from "../../server/subsidy.ts";
 import { CITY_ACTIONS, costColor, cssColor, feeTop } from "../../lib/city.ts";
+import type { GraphResponse } from "../../lib/graph.ts";
+import { GraphArt } from "./GraphArt.tsx";
 import { BeforeAfterBars } from "../subsidy/SubsidyParts.tsx";
 import { formatAge, NA } from "../../lib/format.ts";
 import { timeLabel } from "../../lib/lenses.ts";
@@ -54,7 +56,7 @@ const LENSES = [
   { key: "city", n: "01", name: "City", q: "Which actions carry the volume, and what do they cost?", text: "One building per action type and per Pons token. Height follows the metric you choose, color is the fee. Click a building to open its numbers." },
   { key: "terrain", n: "02", name: "Terrain", q: "How did each action move over time?", text: "Time across, action types (or Pons tokens) in depth, height and color from the metric. The 29 September line is drawn across it." },
   { key: "flow", n: "03", name: "Flow", q: "What is moving right now, and how much does it pay?", text: "Every live transaction is a particle from source through action type to token, colored by fee. Pause it, filter it, click a dot." },
-  { key: "graph", n: "04", name: "Graph", q: "Which wallets keep moving value between each other?", text: "Wallets and contracts as nodes, transfers as lines. Groups come from patterns Metro can explain, such as a shared first funder. It shows at most 1,500 nodes and says when it trims.", phase: "Phase 9" },
+  { key: "graph", n: "04", name: "Graph", q: "Which wallets keep moving value between each other?", text: "Wallets and contracts as nodes, transfers as lines. Groups come from patterns Metro can explain, such as wallets funded by the same address in the window. It shows at most 1,500 nodes and says when it trims." },
   { key: "heatmap", n: "05", name: "Heatmap", q: "When is it cheapest to swap?", text: "One cell per hour. It answers when swapping is cheapest, and compares the hours before and after the rebate ended." },
   { key: "launchpad", n: "06", name: "Launchpad", q: "Which new Pons tokens are growing, and who holds them?", text: "New Pons tokens with age, holders, swap volume and how much the top ten holders own. Ownership above 50 percent is highlighted as a fact, not a verdict." },
   { key: "split", n: "07", name: "Split", q: "What changed after the rebate ended?", text: "Two windows side by side with the difference marked. If the later window is not full, the page shows how many days it has." },
@@ -261,12 +263,12 @@ function LensStage({ lens, city }: { lens: (typeof LENSES)[number]; city: CityRe
   const flow = usePolling<FlowResponse>(lens.key === "flow" ? "/api/lens/flow/data" : null, null);
   const launch = usePolling<LaunchpadResponse>(lens.key === "launchpad" ? "/api/lens/launchpad/data?window=24h" : null, null);
   const split = usePolling<SubsidyResponse>(lens.key === "split" ? "/api/v1/subsidy" : null, null);
-  const phase = "phase" in lens ? lens.phase : null;
+  const graph = usePolling<GraphResponse>(lens.key === "graph" ? "/api/lens/graph/data?window=24h&cap=60" : null, null);
   return (
     <div className="sticky top-24 flex min-h-[440px] flex-col rounded-[4px] border border-line bg-panel p-[22px] max-[980px]:static" aria-live="polite">
       <div className="mb-2.5 flex justify-between font-mono text-[11px] uppercase tracking-[0.08em] text-mute">
         <span>{lens.name}</span>
-        <span>{phase ? `Arrives in ${phase}` : lens.key === "flow" ? "Live from RPC" : "Live data"}</span>
+        <span>{lens.key === "flow" ? "Live from RPC" : "Live data"}</span>
       </div>
       <div className="flex min-h-[300px] flex-1 items-center justify-center">
         {lens.key === "city" ? <CityArt d={city} /> : null}
@@ -274,15 +276,13 @@ function LensStage({ lens, city }: { lens: (typeof LENSES)[number]; city: CityRe
         {lens.key === "heatmap" ? <HeatArt d={heat.data} /> : null}
         {lens.key === "flow" ? <FlowArt d={flow.data} /> : null}
         {lens.key === "launchpad" ? <LaunchArt d={launch.data} /> : null}
+        {lens.key === "graph" ? <GraphArt d={graph.data} /> : null}
         {lens.key === "split" ? (split.data && split.data.before.tx > 0 ? <BeforeAfterBars data={split.data} metric="tx_per_block" height={220} caption={false} /> : <p className="text-[15px] text-mute">{split.data ? "No block from these windows is ingested yet." : "Loading live data…"}</p>) : null}
-        {phase ? <p className="max-w-[36ch] text-center text-[15px] text-mute">This lens is built in {phase}. It will show real chain data only; there is no sample drawing here.</p> : null}
       </div>
       <p className="mt-3 text-[15px] text-mute">{lens.text}</p>
-      {!phase ? (
-        <Link href={`/lens/${lens.key}`} className="mt-3 self-start text-[14px] text-text underline decoration-mute hover:decoration-text">
-          Open the {lens.name} lens
-        </Link>
-      ) : null}
+      <Link href={`/lens/${lens.key}`} className="mt-3 self-start text-[14px] text-text underline decoration-mute hover:decoration-text">
+        Open the {lens.name} lens
+      </Link>
     </div>
   );
 }
@@ -528,7 +528,7 @@ export function Landing() {
           <div className="mt-10 grid grid-cols-2 gap-x-14 max-[980px]:grid-cols-1">
             {[
               ["Predict prices", "Surveyor explains what the data shows. It gives no forecast and no advice to buy or sell."],
-              ["Accuse wallets", "The graph groups wallets by patterns it can explain, such as a shared first funder. It does not label anyone a bot or a fraud."],
+              ["Accuse wallets", "The graph groups wallets by patterns it can explain, such as being funded by the same address in the window. It does not label anyone a bot or a fraud."],
               ["Draw a chart without data", "When there is too little data, the view says so. A lens never fills in for numbers that do not exist."],
               ["Pretend the subsidy label is official", "Which transactions were rebated is an estimate from fee patterns, and every view that uses it says so."],
             ].map(([t, p]) => (

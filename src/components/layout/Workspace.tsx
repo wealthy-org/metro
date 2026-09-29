@@ -7,35 +7,18 @@ import { CityView } from "../city/CityView.tsx";
 import { TimeScrubber } from "../controls/TimeScrubber.tsx";
 import { Toolbar } from "../controls/Toolbar.tsx";
 import { FlowView } from "../flow/FlowView.tsx";
+import { GraphView } from "../graph/GraphView.tsx";
 import { HeatmapView } from "../heatmap/HeatmapView.tsx";
 import { LaunchpadView } from "../launchpad/LaunchpadView.tsx";
 import { SplitView, type SplitInspect } from "../split/SplitView.tsx";
 import { WorkspacePanel } from "../panel/WorkspacePanel.tsx";
 import type { Chip, StageInfo } from "../stage.tsx";
 import { TerrainView } from "../terrain/TerrainView.tsx";
-import { LensRail, RAIL_LENSES } from "./LensRail.tsx";
+import { LensRail } from "./LensRail.tsx";
 
 // The workspace at /lens/[name] (PROJECT.md 7; KL-21): rail, toolbar, lens stage, time scrubber and side panel.
 // Every choice lives in the URL (PROJECT.md 11.2, 11.5; AT 9): the path names the lens, the query holds the rest.
 // Updates replace the URL in place, so reloading or sharing it restores the same view.
-
-const PHASE: Record<string, string> = { graph: "Phase 9" };
-const QUESTION: Record<string, string> = {
-  graph: "Which wallets keep moving value between each other?",
-};
-
-function SoonStage({ lens }: { lens: string }) {
-  const label = RAIL_LENSES.find((l) => l.key === lens)?.label ?? lens;
-  return (
-    <div className="flex min-h-0 items-center justify-center p-8 text-center">
-      <div className="max-w-[48ch]">
-        <h3 className="mb-2 font-display text-[28px] font-bold">{label}</h3>
-        <p className="mb-2 text-[15px]">{QUESTION[lens] ?? ""}</p>
-        <p className="text-mute">This lens is built in {PHASE[lens] ?? "a later phase"}. Until then there is nothing to show here, rather than sample data.</p>
-      </div>
-    </div>
-  );
-}
 
 export function Workspace({ lens }: { lens: string }) {
   const built: LensKey | null = isLensKey(lens) ? lens : null;
@@ -98,7 +81,7 @@ export function Workspace({ lens }: { lens: string }) {
         {built === "flow" ? <FlowView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
         {built === "launchpad" ? <LaunchpadView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
         {built === "split" ? <SplitView state={state} onChange={onChange} onInfo={onInfo} onInspect={setSplitInspect} notice={notice} /> : null}
-        {!built ? <SoonStage lens={lens} /> : null}
+        {built === "graph" ? <GraphView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
         {built && built !== "split" ? (
           <TimeScrubber coverage={info?.coverage ?? null} at={state.at} onAt={onAt} subsidyEnd={info?.subsidy_end ?? null} />
         ) : (
