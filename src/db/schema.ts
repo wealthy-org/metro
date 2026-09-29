@@ -18,7 +18,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-// Mirrors project-context/schema.md. dispatch and analyst_answers arrive in Phases 10 and 11.
+// Mirrors project-context/schema.md. dispatch arrives in Phase 11.
 
 const tstz = (name: string) => timestamp(name, { withTimezone: true });
 
@@ -208,8 +208,7 @@ export const facts = pgTable(
   (t) => [uniqueIndex("uq_facts_key_window").on(t.key, t.windowStart, t.windowEnd), index("idx_facts_computed").on(t.computedAt.desc())],
 );
 
-export const INSIGHT_SEVERITIES = ["info", "attention"] as const;
-export const INSIGHT_STATUSES = ["finding", "not_enough_data"] as const;
+export const INSIGHT_SEVERITIES = ["info", "attention"] as const;export const INSIGHT_STATUSES = ["finding", "not_enough_data"] as const;
 
 // Rule-based insights (PROJECT.md 13.2, 17). `id` is deterministic (rule, subject, window), so a rerun replaces a
 // finding. status, n, window and evidence_url are what api.md 1.5 returns and AT 15/16 check.
@@ -230,4 +229,29 @@ export const insights = pgTable(
     expiresAt: tstz("expires_at").notNull(),
   },
   (t) => [index("idx_insights_created").on(t.createdAt.desc()), index("idx_insights_expires").on(t.expiresAt)],
+);
+
+// Surveyor's per-user limit (PROJECT.md 17; Phase 10 D3): id is `c:<uuid>` for the browser cookie and `ip:<hash>` for
+// the salted IP fallback, so one machine keeps a cap even without a cookie. The IP itself is never stored.
+export const users = pgTable("users", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  dailyAskCount: integer("daily_ask_count").notNull().default(0),
+  lastAskDate: date("last_ask_date").notNull().default(sql`CURRENT_DATE`),
+});
+
+// Verified Surveyor answers, keyed by a hash of topic, scope and the fact ids and values used (PROJECT.md 13.4.6): an
+// identical question over the same facts is served from here without a model call. facts_ref holds facts.id values, so
+// every answer links to the same Ledger the rest of Metro reads (api.md 2.1).
+export const analystAnswers = pgTable(
+  "analyst_answers",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    questionHash: varchar("question_hash", { length: 64 }).notNull(),
+    factsRef: jsonb("facts_ref").$type<number[]>().notNull(),
+    answer: text("answer").notNull(),
+    modelUsed: varchar("model_used", { length: 64 }).notNull(),
+    validated: boolean("validated").notNull().default(true),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("idx_answers_hash").on(t.questionHash)],
 );

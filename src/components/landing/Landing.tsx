@@ -487,7 +487,7 @@ export function Landing() {
           <Reveal>
             <div className={eyebrow}>Surveyor, the built-in analyst</div>
             <h2 className={h2}>An AI that writes. Code that checks.</h2>
-            <p className={`${lead} mt-[18px]`}>Ask from a list of questions. Surveyor explains the answer, but it never sees raw data and never does the math. It is built in Phase 10.</p>
+            <p className={`${lead} mt-[18px]`}>Ask in your own words, within a listed set of topics. Surveyor explains the answer, but it never sees raw data and never does the math; every number it writes is checked against the computed facts first.</p>
           </Reveal>
           <Reveal className="mt-11 grid grid-cols-4 overflow-hidden rounded-[4px] border border-line max-[980px]:grid-cols-1">
             {[

@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import type { InsightsResponse, InsightT, InspectorResponse } from "../../lib/api-types.ts";
-import { CITY_WINDOWS, formatMetric } from "../../lib/city.ts";
+import { TOPICS } from "../../analyst/topics.ts";
+import { CITY_WINDOWS, actionLabel, formatMetric } from "../../lib/city.ts";
 import { formatAge, NA, shortHex as shortHash, utcMinute as utc } from "../../lib/format.ts";
 import { clusterLabel } from "../../lib/graph.ts";
 import { relatedTo } from "../../lib/insight-match.ts";
 import { dataQuery, filterSummary, type ViewState } from "../../lib/view-state.ts";
 import { usePolling } from "../hooks.ts";
+import { SurveyorPane, type AskSeed } from "../surveyor/SurveyorPane.tsx";
 import { InsightCard } from "../insights/InsightCard.tsx";
 
 const POLL_MS = 15_000;
@@ -69,7 +71,7 @@ function Kv({ rows }: { rows: [string, string][] }) {
 
 const H4 = ({ children }: { children: string }) => <h4 className="mt-4 mb-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-mute">{children}</h4>;
 
-function Details({ d, onClear, related }: { d: InspectorResponse; onClear: () => void; related: InsightT[] | null }) {
+function Details({ d, onClear, related, onAsk }: { d: InspectorResponse; onClear: () => void; related: InsightT[] | null; onAsk: (seed: AskSeed) => void }) {
   const v = d.values;
   const change = d.previous?.change;
   const changeText =
@@ -201,8 +203,22 @@ function Details({ d, onClear, related }: { d: InspectorResponse; onClear: () =>
       )}
 
       <div className="mt-4 flex gap-2">
-        <button type="button" disabled title="Surveyor: coming soon" className="cursor-not-allowed rounded-[3px] border border-line bg-panel2 px-[11px] py-[7px] text-[12px] text-mute">
-          Ask Surveyor about this · soon
+        <button
+          type="button"
+          onClick={() =>
+            onAsk(
+              d.kind === "token"
+                ? { question: TOPICS.token.question, scope: { token: d.key } }
+                : d.kind === "address"
+                  ? { question: TOPICS.wallet.question, scope: { address: d.key } }
+                  : d.kind === "hour"
+                    ? { question: TOPICS.hours.question }
+                    : { question: `When is ${actionLabel(d.key)} cheapest?`, scope: { action: d.key } },
+            )
+          }
+          className="rounded-[3px] border border-line bg-panel2 px-[11px] py-[7px] text-[12px] hover:border-mute"
+        >
+          Ask Surveyor about this
         </button>
         <button type="button" onClick={onClear} className="rounded-[3px] border border-line bg-panel2 px-[11px] py-[7px] text-[12px] hover:border-mute">
           Clear
@@ -212,7 +228,7 @@ function Details({ d, onClear, related }: { d: InspectorResponse; onClear: () =>
   );
 }
 
-function InspectorPane({ state, note, onClear, insights }: { state: ViewState; note: string | null; onClear: () => void; insights: InsightT[] | null }) {
+function InspectorPane({ state, note, onClear, insights, onAsk }: { state: ViewState; note: string | null; onClear: () => void; insights: InsightT[] | null; onAsk: (seed: AskSeed) => void }) {
   const selected = state.sel;
   const url = selected && !note ? `/api/inspector?${dataQuery(state, { kind: selected.kind, key: selected.key })}` : null;
   const insp = usePolling<InspectorResponse>(url, state.at ? null : POLL_MS);
@@ -253,7 +269,7 @@ function InspectorPane({ state, note, onClear, insights }: { state: ViewState; n
           Updating…
         </p>
       ) : null}
-      <Details d={d} onClear={onClear} related={insights === null ? null : relatedTo(insights.filter((i) => i.status === "finding"), { kind: d.kind === "address" ? "wallet" : d.kind, key: d.key })} />
+      <Details d={d} onClear={onClear} onAsk={onAsk} related={insights === null ? null : relatedTo(insights.filter((i) => i.status === "finding"), { kind: d.kind === "address" ? "wallet" : d.kind, key: d.key })} />
     </>
   );
 }
@@ -296,7 +312,7 @@ function InsightsPane({ data, status }: { data: InsightsResponse | null; status:
 const TABS = [
   { key: "inspector", label: "Inspector", ready: true },
   { key: "insights", label: "Insights", ready: true },
-  { key: "surveyor", label: "Surveyor", ready: false },
+  { key: "surveyor", label: "Surveyor", ready: true },
   { key: "dispatch", label: "Dispatch", ready: false },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
@@ -305,6 +321,7 @@ const INSIGHTS_POLL_MS = 60_000;
 
 export function WorkspacePanel({ state, note = null, onClear }: { state: ViewState; note?: string | null; onClear: () => void }) {
   const [tab, setTab] = useState<TabKey>("inspector");
+  const [askSeed, setAskSeed] = useState<AskSeed>(null);
   const ins = usePolling<InsightsResponse>("/api/v1/insights", INSIGHTS_POLL_MS);
   // Selecting an object shows it, whichever tab was open (prototype select(): showTab('insp')).
   const selKey = state.sel ? `${state.sel.kind}:${state.sel.key}` : null;
@@ -350,7 +367,20 @@ export function WorkspacePanel({ state, note = null, onClear }: { state: ViewSta
       </div>
       {tab === "inspector" ? (
         <section id="panel-inspector" role="tabpanel" aria-labelledby="panel-tab-inspector" className="min-h-0 overflow-auto p-4">
-          <InspectorPane state={state} note={note} onClear={onClear} insights={ins.data?.insights ?? (ins.status === "error" ? [] : null)} />
+          <InspectorPane
+            state={state}
+            note={note}
+            onClear={onClear}
+            insights={ins.data?.insights ?? (ins.status === "error" ? [] : null)}
+            onAsk={(seed) => {
+              setAskSeed(seed);
+              setTab("surveyor");
+            }}
+          />
+        </section>
+      ) : tab === "surveyor" ? (
+        <section id="panel-surveyor" role="tabpanel" aria-labelledby="panel-tab-surveyor" className="min-h-0 overflow-auto p-4">
+          <SurveyorPane state={state} seed={askSeed} />
         </section>
       ) : (
         <section id="panel-insights" role="tabpanel" aria-labelledby="panel-tab-insights" className="min-h-0 overflow-auto p-4">

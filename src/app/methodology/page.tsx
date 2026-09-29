@@ -43,6 +43,15 @@ const METRICS: [string, ReactNode][] = [
   ["Volume 24h", "USD volume over a token's pools from GeckoTerminal, the current value whatever the window."],
 ];
 
+const SURVEYOR: [string, string][] = [
+  ["Topics", "A question maps to one of twelve topics: the cheapest and dearest hour, the fee per action, a gas spike, the subsidy shift, the fastest-growing Pons launch, holder concentration, a dominant wallet, the fail rate, block usage, the composition shift, one token, or one wallet. Anything else is refused with the reason."],
+  ["How a question maps", "Keyword rules decide most questions without a model call. What they miss is classified by one model call that returns a topic and scope, which code validates against the lists; a question that maps to nothing useful is refused, not guessed."],
+  ["The number check", "Every number a model writes must equal a fact value rounded to the digits written, after the stated unit conversions (%, K, M, B), or be part of the facts' context (sample sizes, window lengths, dates and hours). Anything else rejects the answer."],
+  ["The model ladder", "Six free OpenRouter models, one vendor per layer, then a fixed template with no model. A layer is left only for a technical failure (rate limit, server error, timeout, model unavailable), after at most three retries with backoff; a wrong number or advice-like wording retries the same layer twice first. When the account itself is rate limited, or every layer fails, the template answers with the same facts."],
+  ["Advice and accusations", "Answers that give financial advice, predict prices, or make identity or intent claims are rejected by the same check and retried or replaced by the template. Refusals name the reason."],
+  ["Quota and cache", "Ten questions a day per browser, and three times that per network address, counted by a hashed value; the IP itself is never stored. The same question over the same facts is served from the answer cache and does not count again. Across all of Metro there is also a daily cap of 45 model calls on the free OpenRouter account, with at most 20 per minute."],
+];
+
 const LIMITS: [string, string][] = [
   ["Coverage", "The Collector does not run all the time yet, so the database holds only some stretches of blocks. Every lens and insight names its window; a window with no ingested blocks shows nothing rather than a zero."],
   ["When numbers refresh", "Facts and insights are recomputed every 10 minutes while the Collector runs and once a day by a scheduled job. An insight expires 25 hours after it was computed."],
@@ -143,6 +152,10 @@ export default function MethodologyPage() {
         <p className="mt-2 max-w-[80ch] text-[12px] text-mute">
           The evidence link opens the view at the minute of the newest block the insight used, so the lens computes the same window. Wallet profiles count every ingested block, which matches the 24 h figure while the ingested data spans no more than 24 h. The subsidy end is {end} (00:00 UTC).
         </p>
+      </Section>
+
+      <Section title="Surveyor" note="The built-in analyst answers from the Ledger of Facts only (PROJECT.md 13.3).">
+        <Rows rows={SURVEYOR} />
       </Section>
 
       <Section title="Limits">

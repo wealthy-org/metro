@@ -4,13 +4,16 @@ import { Facts, ProfileShell, Section } from "../../components/profile/Profile.t
 import { CompareTable, CoverageNote, change, estPerDay, BeforeAfterBars, perBlock, points, share, Timeline, usd } from "../../components/subsidy/SubsidyParts.tsx";
 import { BOT_MIN_TX, BOT_PATTERN_SHARE } from "../../engine/subsidy.ts";
 import { formatDay, NA } from "../../lib/format.ts";
+import { latestAnswerId } from "../../analyst/budget.ts";
+import { getStoredAnswer } from "../../server/ask.ts";
 import { getDb } from "../../server/http.ts";
 import { getInsights } from "../../server/insights.ts";
 import { getSubsidy, parseSubsidyParams } from "../../server/subsidy.ts";
 
 // /subsidy (PROJECT.md 7, 12): what changed on chain around the end of the Robinhood Wallet gas rebate. The main
 // timeline with the end date, the before vs after table with differences and samples, the Split panel, and the method
-// (12.4). Figures come from sampled blocks (Phase 8 D1, KL-28) and say so. The written Surveyor summary is Phase 10.
+// (12.4). Figures come from sampled blocks (Phase 8 D1, KL-28) and say so. The Surveyor summary is written on demand
+// (Phase 10) and the newest one for this topic is shown here.
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Subsidy Cliff, Metro" };
@@ -22,6 +25,8 @@ export default async function SubsidyPage() {
   const p = parseSubsidyParams(new URLSearchParams());
   if (typeof p === "string") throw new Error(p);
   const [data, ins] = await Promise.all([getSubsidy(db, p), getInsights(db, { rule: "subsidy_shift", status: null, severity: null })]);
+  const summaryId = await latestAnswerId("subsidy");
+  const summary = summaryId ? await getStoredAnswer(db, summaryId) : null;
   const { before: b, after: a } = data;
   const tx = change(b.tx_per_block, a.tx_per_block);
   const splitHref = `/lens/split?before=${data.windows.before}&after=${data.windows.after}`;
@@ -118,7 +123,26 @@ export default async function SubsidyPage() {
       </Section>
 
       <Section title="Surveyor summary">
-        <p className="text-[12px] text-mute">Coming soon: a short written summary from Surveyor, built only from these figures, will appear here. Until then the table and the insight above are the summary.</p>
+        {summary ? (
+          <>
+            <p className="max-w-[92ch] text-[13px]">{summary.answer}</p>
+            <p className="mt-2 text-[11px] text-mute">
+              Written by Surveyor ({summary.modelUsed}) from the facts on this page.{" "}
+              <a href={`/ask?a=${summaryId}`} className="text-text underline decoration-mute underline-offset-2 hover:decoration-text">
+                Open the shared answer
+              </a>
+              .
+            </p>
+          </>
+        ) : (
+          <p className="max-w-[92ch] text-[12px] text-mute">
+            No summary has been written yet.{" "}
+            <a href="/ask?q=What%20changed%20after%20the%20rebate%20ended%3F" className="text-text underline decoration-mute underline-offset-2 hover:decoration-text">
+              Ask Surveyor what changed after the rebate ended
+            </a>{" "}
+            and the newest answer appears here; it is built only from the figures on this page.
+          </p>
+        )}
       </Section>
 
       <Section title="Method">

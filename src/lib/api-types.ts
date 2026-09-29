@@ -305,3 +305,24 @@ export type InsightsResponse = { total: number; findings: number; min_sample: nu
 // GET /api/v1/facts?prefix= (PROJECT.md 13.1, 16).
 export type FactT = { id: number; key: string; window: { start: string; end: string }; value: number; n: number; computed_at: string };
 export type FactsResponse = { prefix: string; total: number; facts: FactT[]; generated_at: string };
+// POST /api/ask (PROJECT.md 13.3, 18; api.md 2.1; Phase 10). Sources are facts from the Ledger; trail is the plain
+// account of which layer answered and what was rejected; a refusal carries refused_reason and no model output.
+export type AskSourceT = { fact_key: string; value: number; n: number; window: { start: string; end: string }; lens_url: string };
+export type AskResponseT = {
+  id: string | null;
+  question: string;
+  topic: string;
+  title: string;
+  scope: { window: string; action: string | null; token: string | null; address: string | null };
+  answer: string;
+  model_used: string;
+  layer: number;
+  layer_name: string;
+  validated: boolean;
+  sources: AskSourceT[];
+  trail: string[];
+  cached: boolean;
+  refused_reason: string | null;
+  quota: { limit: number; used: number; remaining: number; reset: string };
+  generated_at: string;
+};
