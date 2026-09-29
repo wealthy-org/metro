@@ -8,7 +8,7 @@ import { actionLabel, costColor, cssColor, MAX_HEIGHT, MIN_HEIGHT, NO_FEE_RGB } 
 import { formatDay, formatUsdCompact, NA, shortHex } from "../../lib/format.ts";
 import type { TokenCompare, TokenSide } from "../../server/compare.ts";
 import type { SubsidyResponse } from "../../server/subsidy.ts";
-import { type ViewState } from "../../lib/view-state.ts";
+import { lensDataUrl, type ViewState } from "../../lib/view-state.ts";
 import { usePolling, useReducedMotion } from "../hooks.ts";
 import { POLL_MS, StageOverlay, useWebGl, type Chip, type StageInfo } from "../stage.tsx";
 import { CameraSync } from "../city/camera-sync.ts";
@@ -320,12 +320,7 @@ function TokensMode({ d, onChange, state }: { d: TokensData; state: ViewState; o
 
 export function SplitView({ state, onChange, onInfo, onInspect }: { state: ViewState; onChange: (patch: Partial<ViewState>) => void; onInfo: (info: StageInfo) => void; onInspect: (i: SplitInspect | null) => void; notice: Chip | null }) {
   const s = state.split;
-  const q = new URLSearchParams({ cmp: s.cmp });
-  if (s.before) q.set("before", s.before);
-  if (s.after && s.cmp === "windows") q.set("after", s.after);
-  if (s.cmp === "tokens" && s.ta) q.set("ta", s.ta);
-  if (s.cmp === "tokens" && s.tb) q.set("tb", s.tb);
-  const res = usePolling<WindowsData | TokensData>(`/api/lens/split/data?${q.toString()}`, POLL_MS * 4);
+  const res = usePolling<WindowsData | TokensData>(lensDataUrl("split", state), POLL_MS * 4);
   const d = res.data && res.data.cmp === s.cmp ? res.data : null;
 
   // The scrubber shows the ingested coverage; Split has its own windows and does not move with it.

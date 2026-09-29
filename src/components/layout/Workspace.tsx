@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isLensKey, isShortWindow, NO_FILTERS, normalize, parseViewState, rawFilterCount, serializeViewState, type LensKey, type ViewState } from "../../lib/view-state.ts";
 import { CityView } from "../city/CityView.tsx";
+import { ExportMenu } from "../controls/ExportMenu.tsx";
 import { TimeScrubber } from "../controls/TimeScrubber.tsx";
 import { Toolbar } from "../controls/Toolbar.tsx";
 import { FlowView } from "../flow/FlowView.tsx";
@@ -74,7 +75,7 @@ export function Workspace({ lens }: { lens: string }) {
     <>
       <LensRail active={lens} query={query} />
       <main className="grid min-h-0 min-w-0 grid-rows-[44px_1fr_76px] bg-bg">
-        {built ? <Toolbar lens={built} state={state} onChange={onChange} /> : <div className="border-b border-line bg-panel" />}
+        {built ? <Toolbar lens={built} state={state} onChange={onChange} extra={<ExportMenu lens={built} state={state} windowLabel={built === "split" ? state.split.cmp : state.window} />} /> : <div className="border-b border-line bg-panel" />}
         {built === "city" ? <CityView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
         {built === "terrain" ? <TerrainView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}
         {built === "heatmap" ? <HeatmapView state={state} onChange={onChange} onInfo={onInfo} notice={notice} /> : null}

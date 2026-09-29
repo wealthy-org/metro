@@ -8,6 +8,7 @@ import type { SubsidyResponse } from "../../server/subsidy.ts";
 import { CITY_ACTIONS, costColor, cssColor, feeTop } from "../../lib/city.ts";
 import type { GraphResponse } from "../../lib/graph.ts";
 import { GraphArt } from "./GraphArt.tsx";
+import { DispatchSample } from "./DispatchSample.tsx";
 import { BeforeAfterBars } from "../subsidy/SubsidyParts.tsx";
 import { formatAge, NA } from "../../lib/format.ts";
 import { timeLabel } from "../../lib/lenses.ts";
@@ -547,20 +548,11 @@ export function Landing() {
             <div className={eyebrow}>Dispatch</div>
             <h2 className={h2}>A daily report you can forward.</h2>
             <p className={`${lead} mt-[18px]`}>
-              Every day at 00:10 UTC Metro writes a report from the same facts: the numbers, the findings, what moved most. Each report has its own page, and exports to Markdown or PDF. Build a custom one for any date range and lens.
+              Every day after 00:10 UTC Metro writes a report from the same facts: the numbers, the findings, what moved most. Each report has its own page, and exports to Markdown or PDF. Build a custom one for any date range, with the lens pictures you pick.
             </p>
           </Reveal>
           <Reveal>
-            <div className="whitespace-pre-wrap rounded-[4px] border border-line bg-panel p-[22px] font-mono text-[13px] leading-[1.7] text-[#c9cfdc]">
-              <b className="font-medium text-accent"># Metro Dispatch</b>
-              {"\n\nThe first report is written once Dispatch runs (Phase 11). Each one has these parts:\n\n"}
-              <b className="font-medium text-accent">## Numbers</b>
-              {"\n- Transactions, with the window\n- Blended fee\n- Paid share (estimate)\n\n"}
-              <b className="font-medium text-accent">## Findings</b>
-              {"\nThe top insights, each with n and window.\n\n"}
-              <b className="font-medium text-accent">## Method</b>
-              {"\nAll numbers come from fixed rules over stored facts."}
-            </div>
+            <DispatchSample />
           </Reveal>
         </div>
       </section>

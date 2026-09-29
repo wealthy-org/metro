@@ -267,3 +267,32 @@ export function filterSummary(f: Filters): string[] {
   if (f.status) out.push(f.status === "failed" ? "failed only" : "successful only");
   return out;
 }
+
+// The data URL the Graph, Split and every other lens view fetches, shared by the views and the export menu so an
+// export always reads what is on screen (Phase 11 gate F83). Null when the Graph has no address to center on.
+export function lensDataUrl(lens: string, s: ViewState): string | null {
+  if (lens === "graph") {
+    const g = s.graph;
+    if (g.mode === "ego" && !g.addr) return null;
+    const q = new URLSearchParams(dataQuery(s));
+    if (g.mode === "ego" && g.addr) {
+      q.set("mode", "ego");
+      q.set("addr", g.addr);
+      q.set("hops", String(g.hops));
+    } else if (g.mode === "token" && g.token) {
+      q.set("mode", "token");
+      q.set("gtoken", g.token);
+    }
+    return `/api/lens/graph/data?${q.toString()}`;
+  }
+  if (lens === "split") {
+    const sp = s.split;
+    const q = new URLSearchParams({ cmp: sp.cmp });
+    if (sp.before) q.set("before", sp.before);
+    if (sp.after && sp.cmp === "windows") q.set("after", sp.after);
+    if (sp.cmp === "tokens" && sp.ta) q.set("ta", sp.ta);
+    if (sp.cmp === "tokens" && sp.tb) q.set("tb", sp.tb);
+    return `/api/lens/split/data?${q.toString()}`;
+  }
+  return `/api/lens/${lens}/data?${dataQuery(s)}`;
+}

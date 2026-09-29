@@ -46,3 +46,53 @@ body {
     scroll-behavior: smooth;
   }
 }
+
+/* Report pages print on white (Phase 11 D1): "Download PDF" opens the print dialog, which writes the report page
+   without the app chrome. Charts keep their dark plate so their light strokes stay readable. */
+@media print {
+  html,
+  body {
+    height: auto;
+  }
+
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  .h-screen {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .h-screen > header,
+  .h-screen nav[aria-label="Breadcrumb"] {
+    display: none !important;
+  }
+
+  main {
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  main .text-mute {
+    color: #555 !important;
+  }
+
+  .dispatch-report h1,
+  .dispatch-report h2,
+  .dispatch-report a {
+    color: #111 !important;
+  }
+
+  .dispatch-report a {
+    text-decoration: underline !important;
+  }
+
+  .dispatch-report svg,
+  .dispatch-report div:has(> svg) {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

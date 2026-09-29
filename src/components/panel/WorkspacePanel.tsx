@@ -10,6 +10,7 @@ import { clusterLabel } from "../../lib/graph.ts";
 import { relatedTo } from "../../lib/insight-match.ts";
 import { dataQuery, filterSummary, type ViewState } from "../../lib/view-state.ts";
 import { usePolling } from "../hooks.ts";
+import { DispatchPane } from "../dispatch/DispatchPane.tsx";
 import { SurveyorPane, type AskSeed } from "../surveyor/SurveyorPane.tsx";
 import { InsightCard } from "../insights/InsightCard.tsx";
 
@@ -313,7 +314,7 @@ const TABS = [
   { key: "inspector", label: "Inspector", ready: true },
   { key: "insights", label: "Insights", ready: true },
   { key: "surveyor", label: "Surveyor", ready: true },
-  { key: "dispatch", label: "Dispatch", ready: false },
+  { key: "dispatch", label: "Dispatch", ready: true },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -381,6 +382,10 @@ export function WorkspacePanel({ state, note = null, onClear }: { state: ViewSta
       ) : tab === "surveyor" ? (
         <section id="panel-surveyor" role="tabpanel" aria-labelledby="panel-tab-surveyor" className="min-h-0 overflow-auto p-4">
           <SurveyorPane state={state} seed={askSeed} />
+        </section>
+      ) : tab === "dispatch" ? (
+        <section id="panel-dispatch" role="tabpanel" aria-labelledby="panel-tab-dispatch" className="min-h-0 overflow-auto p-4">
+          <DispatchPane />
         </section>
       ) : (
         <section id="panel-insights" role="tabpanel" aria-labelledby="panel-tab-insights" className="min-h-0 overflow-auto p-4">

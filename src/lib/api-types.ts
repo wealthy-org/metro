@@ -326,3 +326,13 @@ export type AskResponseT = {
   quota: { limit: number; used: number; remaining: number; reset: string };
   generated_at: string;
 };
+
+// GET /api/v1/dispatch and /api/v1/dispatch/:id (PROJECT.md 16; Phase 11). facts_ref lists the facts every number in
+// body_md came from; facts carries the same rows for the report page.
+export type DispatchListItemT = { id: string; kind: string; range_label: string; model_used: string; created_at: string };
+export type DispatchReportT = DispatchListItemT & {
+  body_md: string;
+  facts_ref: number[];
+  facts: { id: number; key: string; window: { start: string; end: string }; value: number; n: number }[];
+  generated_at: string;
+};

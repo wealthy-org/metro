@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/check-analyst-models",
       "schedule": "30 0 * * *"
+    },
+    {
+      "path": "/api/cron/dispatch-daily",
+      "schedule": "10 0 * * *"
     }
   ]
 }

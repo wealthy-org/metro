@@ -37,7 +37,7 @@ export type TopicData = {
   labels: Record<string, string>;
 };
 
-type Line = FactDraft & { line: string; id?: number };
+export type Line = FactDraft & { line: string; id?: number };
 type Built = { lines: Line[]; picks: number[]; template: string; enough: boolean; missing: string | null; extras?: number[]; labels?: Record<string, string> };
 
 const fmtUsd = (v: number) => formatMetric(v, "avg_fee_usd");
@@ -51,9 +51,9 @@ const actionName = (key: string) => (key === "other" ? "Other" : actionLabel(key
 
 // ---------------------------------------------------------------- ledger plumbing
 
-const draftKey = (key: string, start: Date, end: Date) => `${key}|${start.toISOString()}|${end.toISOString()}`;
+export const draftKey = (key: string, start: Date, end: Date) => `${key}|${start.toISOString()}|${end.toISOString()}`;
 
-async function saveFacts(db: Db, lines: Line[], now: Date): Promise<Map<string, number>> {
+export async function saveFacts(db: Db, lines: Line[], now: Date): Promise<Map<string, number>> {
   const fresh = [...new Map(lines.filter((l) => l.id === undefined).map((l) => [draftKey(l.key, l.start, l.end), l])).values()];
   if (!fresh.length) return new Map();
   const out = await db
@@ -70,11 +70,11 @@ async function saveFacts(db: Db, lines: Line[], now: Date): Promise<Map<string, 
 // A ledger row that is read again for a topic is cited as it stands (its id and window), never rewritten here.
 const reline = (r: FactRowT, line: string): Line => ({ key: r.key, start: r.start, end: r.end, value: r.value, n: r.n, line, id: r.id });
 
-type FactRowT = { id: number; key: string; start: Date; end: Date; value: number; n: number };
+export type FactRowT = { id: number; key: string; start: Date; end: Date; value: number; n: number };
 
 const toRow = (x: Record<string, unknown>): FactRowT => ({ id: num(x.id), key: String(x.key), start: new Date(iso(x.window_start) ?? 0), end: new Date(iso(x.window_end) ?? 0), value: num(x.value), n: num(x.n) });
 
-async function readFacts(db: Db, keys: string[]): Promise<FactRowT[]> {
+export async function readFacts(db: Db, keys: string[]): Promise<FactRowT[]> {
   if (!keys.length) return [];
   const out = await rows(db, sql`
     SELECT DISTINCT ON (key, window_start, window_end) id, key, window_start, window_end, value, n
@@ -85,7 +85,7 @@ async function readFacts(db: Db, keys: string[]): Promise<FactRowT[]> {
   return out.map(toRow);
 }
 
-async function readFactsLike(db: Db, prefix: string): Promise<FactRowT[]> {
+export async function readFactsLike(db: Db, prefix: string): Promise<FactRowT[]> {
   const out = await rows(db, sql`
     SELECT DISTINCT ON (key, window_start, window_end) id, key, window_start, window_end, value, n
     FROM facts
@@ -518,7 +518,7 @@ async function buildWallet(db: Db, scope: Scope): Promise<Built> {
 
 // ---------------------------------------------------------------- assembly
 
-function windowNumbers(cites: Cite[], extras: number[]): { numbers: number[]; times: string[] } {
+export function windowNumbers(cites: Cite[], extras: number[]): { numbers: number[]; times: string[] } {
   const numbers = new Set<number>(extras);
   const times = new Set<string>();
   for (const c of cites) {

@@ -80,10 +80,12 @@ export async function runEngine(db: Db, now = new Date()): Promise<EngineResult>
         })),
       );
     }
-    // Facts nobody references and older than the retention are dropped (KL-1). Dispatch (Phase 11) adds its own refs.
+    // Facts nobody references and older than the retention are dropped (KL-1). Insights and Dispatch (Phase 11)
+    // record what they cite.
     const pruned = await t.execute(sql`
       DELETE FROM facts f WHERE f.computed_at < ${new Date(now.getTime() - FACT_RETENTION_DAYS * 86_400_000)}
-        AND NOT EXISTS (SELECT 1 FROM insights i WHERE i.facts_ref @> to_jsonb(f.id))`);
+        AND NOT EXISTS (SELECT 1 FROM insights i WHERE i.facts_ref @> to_jsonb(f.id))
+        AND NOT EXISTS (SELECT 1 FROM dispatch d WHERE d.facts_ref @> to_jsonb(f.id))`);
     return {
       status: "done",
       anchor: anchor.toISOString(),

@@ -18,7 +18,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-// Mirrors project-context/schema.md. dispatch arrives in Phase 11.
+// Mirrors project-context/schema.md.
 
 const tstz = (name: string) => timestamp(name, { withTimezone: true });
 
@@ -254,4 +254,23 @@ export const analystAnswers = pgTable(
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
   (t) => [index("idx_answers_hash").on(t.questionHash)],
+);
+
+export const DISPATCH_KINDS = ["daily", "custom", "subsidy_impact"] as const;
+
+// Generated reports (PROJECT.md 14, 17; Phase 11): the daily report (id daily-YYYY-MM-DD), the subsidy report
+// (subsidy-impact, rebuilt each day) and custom reports (a random id). body_md is the report itself; facts_ref lists
+// every fact its numbers came from, so pruning never drops a fact a report cites (schema.md 3.3).
+export const dispatch = pgTable(
+  "dispatch",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    kind: varchar("kind", { length: 32, enum: DISPATCH_KINDS }).notNull(),
+    rangeLabel: varchar("range_label", { length: 64 }).notNull(),
+    bodyMd: text("body_md").notNull(),
+    factsRef: jsonb("facts_ref").$type<number[]>().notNull(),
+    modelUsed: varchar("model_used", { length: 64 }).notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("idx_dispatch_created").on(t.createdAt.desc())],
 );

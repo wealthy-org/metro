@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { costColor, cssColor, formatMetric } from "../../lib/city.ts";
 import { GRAPH_NODE_CAP, type GraphResponse } from "../../lib/graph.ts";
 import { shortHex } from "../../lib/format.ts";
-import { dataQuery, type GraphMode, type ViewState } from "../../lib/view-state.ts";
+import { lensDataUrl, type GraphMode, type ViewState } from "../../lib/view-state.ts";
 import { Segmented } from "../controls/Toolbar.tsx";
 import { usePolling, useReducedMotion } from "../hooks.ts";
 import { POLL_MS, scopeNote, StageChips, StageOverlay, type Chip, type StageInfo } from "../stage.tsx";
@@ -34,16 +34,7 @@ export function GraphView({ state, onChange, onInfo, notice }: { state: ViewStat
 
   // Token flow without a token asks for the top view only to list the tokens moved in the window.
   const waiting = (g.mode === "ego" && !g.addr) || (g.mode === "token" && !g.token);
-  const q = new URLSearchParams(dataQuery(state));
-  if (g.mode === "ego" && g.addr) {
-    q.set("mode", "ego");
-    q.set("addr", g.addr);
-    q.set("hops", String(g.hops));
-  } else if (g.mode === "token" && g.token) {
-    q.set("mode", "token");
-    q.set("gtoken", g.token);
-  }
-  const url = g.mode === "ego" && !g.addr ? null : `/api/lens/graph/data?${q.toString()}`;
+  const url = lensDataUrl("graph", state);
   const res = usePolling<GraphResponse>(url, state.at ? null : POLL_MS * 4);
   const d = res.data;
   const shown = d && !waiting ? d : null;

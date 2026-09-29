@@ -158,6 +158,13 @@ export default function MethodologyPage() {
         <Rows rows={SURVEYOR} />
       </Section>
 
+      <Section title="Dispatch reports" note="Written reports: one a day for the previous UTC day, the subsidy impact report, and custom reports over a chosen range (PROJECT.md 14).">
+        <div className="max-w-[80ch] space-y-2 text-[14px] text-mute">
+          <p>Every report is built from the same Ledger of Facts as the lenses: the range's figures (transactions, blended fee, paid share, fail rate, coverage, per-action shares and per-hour counts, and the same figures for the window before, so the changes are facts too) are stored first, then the text is written from them and every number in it is checked against them before the report is stored. <a href="/api/v1/dispatch" className="text-text underline decoration-mute underline-offset-2 hover:decoration-text">/api/v1/dispatch</a> lists the reports; each report page prints cleanly, downloads as Markdown, and links the lens views it drew on.</p>
+          <p>The pictures in a report are SVG drawn from those facts, not screenshots: the daily run has no browser. Reports are cited back into the facts table, so pruning never removes a fact a report rests on.</p>
+        </div>
+      </Section>
+
       <Section title="Limits">
         <Rows rows={LIMITS} />
       </Section>
