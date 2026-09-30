@@ -6,11 +6,13 @@
 // not touched.
 //
 //   node --env-file=.env scripts/sample-days.ts --from=2026-09-22 --to=2026-09-28 [--slices=12] [--blocks=30]
+//   node --env-file=.env scripts/sample-days.ts --yesterday        (the last complete UTC day; Phase 14 cron)
 //
 // Slices already ingested are skipped, slices in the future are skipped, and the run stops before the database
 // passes MAX_DB_MB.
 
 import { sql } from "drizzle-orm";
+import { pathToFileURL } from "node:url";
 import { fetchBlockBundle } from "../src/collector/ingest.ts";
 import { log } from "../src/collector/log.ts";
 import { HistoricalPriceFeed } from "../src/collector/price.ts";
@@ -37,6 +39,11 @@ const int = (name: string, fallback: number, max: number) => {
   return Number(v);
 };
 
+// The last complete UTC day (Phase 14 cron entry). A day is only sampled after it has ended.
+export function yesterdayUtc(now = new Date()): string {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1)).toISOString().slice(0, 10);
+}
+
 // First block with timestamp >= t: a guess from the chain's block rate, a few corrections, then a binary search in a
 // small bracket. About 10 calls instead of about 27 for a search over the whole chain.
 async function firstBlockAt(c: RpcClient, t: number, head: { number: bigint; ts: number }): Promise<bigint> {
@@ -59,11 +66,7 @@ async function firstBlockAt(c: RpcClient, t: number, head: { number: bigint; ts:
   return hi;
 }
 
-async function main() {
-  const from = day("from");
-  const to = day("to");
-  const slices = int("slices", 12, 24);
-  const size = int("blocks", 30, 600);
+export async function sampleRange(from: string, to: string, slices: number, size: number): Promise<void> {
   const { db, pool } = createDb(process.env.DATABASE_URL, 3);
   const rpc = new RpcPool();
   const prices = new HistoricalPriceFeed(db);
@@ -118,7 +121,20 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  log("error", "sampled backfill failed", { error: err instanceof Error ? err.message : String(err) });
-  process.exitCode = 1;
-});
+async function main() {
+  const slices = int("slices", 12, 24);
+  const size = int("blocks", 30, 600);
+  if (process.argv.includes("--yesterday")) {
+    const d = yesterdayUtc();
+    return sampleRange(d, d, slices, size);
+  }
+  return sampleRange(day("from"), day("to"), slices, size);
+}
+
+// Only run when invoked directly, so scripts/sample-yesterday.ts and tests can import without side effects.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    log("error", "sampled backfill failed", { error: err instanceof Error ? err.message : String(err) });
+    process.exitCode = 1;
+  });
+}

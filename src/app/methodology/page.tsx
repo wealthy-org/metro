@@ -114,6 +114,9 @@ export default function MethodologyPage() {
           <li><b className="font-medium text-text">Contract call</b>: any other call to a contract.</li>
           <li><b className="font-medium text-text">Other</b>: none of the above. Counted in totals, without a City building.</li>
         </ol>
+        <p className="mt-2 max-w-[80ch] text-[12px] text-mute">
+          The bridge rule now has a verified real example: an L2 to L1 withdrawal through ArbSys (block 70,247,568, 23 Sep 2026 05:01 UTC, event <code className="font-mono text-[11px]">L2ToL1Tx</code>) classifies as bridge in the Collector's own classifier (<code className="font-mono text-[11px]">scripts/scan-bridge.ts</code> re-checks any time). L1 to L2 deposits (Nitro transaction types 0x64 and 0x69) have not been observed yet in the scanned windows; when one appears it follows the same rule.
+        </p>
       </Section>
 
       <Section title="The Ledger of Facts">

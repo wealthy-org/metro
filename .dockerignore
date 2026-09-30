@@ -1,0 +1,11 @@
+.env
+.git
+.next
+node_modules
+.playwright-mcp
+.vitest
+project-context
+.codebase-memory
+.agents
+.impeccable
+e2e
