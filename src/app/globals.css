@@ -40,6 +40,36 @@ body {
   outline-offset: 2px;
 }
 
+/* Landing cards (Phase 15 item 6): a static 3D tilt like the reference, plus a hover float; both off under reduced
+   motion. A plain class keeps the reduced-motion override deterministic (Tailwind variant order cannot guarantee it). */
+.tilt-card {
+  transition: transform 300ms ease, box-shadow 300ms ease;
+}
+
+.tilt-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.45);
+}
+
+@media (min-width: 1024px) {
+  .tilt-card {
+    transform: perspective(1100px) rotateY(-11deg) rotateX(2deg) rotate(2deg);
+  }
+
+  .tilt-card:hover {
+    transform: perspective(1100px) rotateY(-11deg) rotateX(2deg) rotate(2deg) translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tilt-card,
+  .tilt-card:hover {
+    transform: none;
+    box-shadow: none;
+    transition: none;
+  }
+}
+
 /* Landing anchor links (project-4-metro-landing.html); off under reduced motion. */
 @media (prefers-reduced-motion: no-preference) {
   html {

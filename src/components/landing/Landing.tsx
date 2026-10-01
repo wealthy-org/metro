@@ -2,14 +2,18 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { CityResponse, FlowResponse, HeatmapResponse, InsightsResponse, LaunchpadResponse, TerrainResponse } from "../../lib/api-types.ts";
 import type { SubsidyResponse } from "../../server/subsidy.ts";
 import { CITY_ACTIONS, costColor, cssColor, feeTop } from "../../lib/city.ts";
 import type { GraphResponse } from "../../lib/graph.ts";
 import { GraphArt } from "./GraphArt.tsx";
 import { DispatchSample } from "./DispatchSample.tsx";
+import { FeatureCarousel } from "./FeatureCarousel.tsx";
+import { TextAnimate } from "./TextAnimate.tsx";
+import { Waveform } from "./Waveform.tsx";
 import { BeforeAfterBars } from "../subsidy/SubsidyParts.tsx";
+import { BrandMark } from "../layout/BrandMark.tsx";
 import { formatAge, NA } from "../../lib/format.ts";
 import { timeLabel } from "../../lib/lenses.ts";
 import { usePolling, useReducedMotion } from "../hooks.ts";
@@ -258,7 +262,7 @@ function SubsidyChart() {
   );
 }
 
-function LensStage({ lens, city }: { lens: (typeof LENSES)[number]; city: CityResponse | null }) {
+function LensStage({ lens, city, onExpand, expanded = false }: { lens: (typeof LENSES)[number]; city: CityResponse | null; onExpand?: () => void; expanded?: boolean }) {
   const terrain = usePolling<TerrainResponse>(lens.key === "terrain" ? "/api/lens/terrain/data?window=24h&metric=tx_count" : null, null);
   const heat = usePolling<HeatmapResponse>(lens.key === "heatmap" ? "/api/lens/heatmap/data?window=7d&metric=avg_fee_usd" : null, null);
   const flow = usePolling<FlowResponse>(lens.key === "flow" ? "/api/lens/flow/data" : null, null);
@@ -266,10 +270,23 @@ function LensStage({ lens, city }: { lens: (typeof LENSES)[number]; city: CityRe
   const split = usePolling<SubsidyResponse>(lens.key === "split" ? "/api/v1/subsidy" : null, null);
   const graph = usePolling<GraphResponse>(lens.key === "graph" ? "/api/lens/graph/data?window=24h&cap=60" : null, null);
   return (
-    <div className="sticky top-24 flex min-h-[440px] flex-col rounded-[4px] border border-line bg-panel p-[22px] max-[980px]:static" aria-live="polite">
-      <div className="mb-2.5 flex justify-between font-mono text-[11px] uppercase tracking-[0.08em] text-mute">
+    <div
+      id={expanded ? undefined : "landing-lens-panel"}
+      role={expanded ? undefined : "tabpanel"}
+      aria-labelledby={expanded ? undefined : `landing-lens-tab-${lens.key}`}
+      className={`${expanded ? "h-full" : "sticky top-24"} flex min-h-[440px] flex-col rounded-[4px] border border-line bg-panel p-[22px] max-[980px]:static`}
+      aria-live="polite"
+    >
+      <div className="mb-2.5 flex items-center justify-between gap-3 font-mono text-[11px] uppercase tracking-[0.08em] text-mute">
         <span>{lens.name}</span>
-        <span>{lens.key === "flow" ? "Live from RPC" : "Live data"}</span>
+        <span className="flex items-center gap-2">
+          <span>{lens.key === "flow" ? "Live from RPC" : "Live data"}</span>
+          {onExpand ? (
+            <button type="button" onClick={onExpand} title="Show this live panel full screen" aria-haspopup="dialog" className="min-h-11 rounded-[3px] border border-mute/70 px-3 text-[10px] tracking-normal normal-case hover:border-mute">
+              Expand
+            </button>
+          ) : null}
+        </span>
       </div>
       <div className="flex min-h-[300px] flex-1 items-center justify-center">
         {lens.key === "city" ? <CityArt d={city} /> : null}
@@ -307,6 +324,62 @@ function HeroCaption({ d }: { d: CityResponse | null }) {
   );
 }
 
+// The FAQ keeps the original details/summary accordion; this only animates open and close. Reduced motion toggles instantly.
+function FaqItem({ q, a }: { q: string; a: string }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const animRef = useRef<Animation | null>(null);
+  const openRef = useRef(false);
+  const reduced = useReducedMotion();
+
+  const onClick = (event: ReactMouseEvent<HTMLElement>) => {
+    const details = ref.current;
+    const body = bodyRef.current;
+    if (!details || !body || reduced) return;
+    event.preventDefault();
+    const open = !openRef.current;
+    openRef.current = open;
+    if (open) {
+      const from = details.open ? body.getBoundingClientRect().height : 0;
+      details.open = true;
+      animRef.current = body.animate([{ height: `${from}px` }, { height: `${body.scrollHeight}px` }], { duration: 260, easing: "ease-out" });
+      return;
+    }
+    const from = body.getBoundingClientRect().height;
+    const anim = body.animate([{ height: `${from}px` }, { height: "0px" }], { duration: 260, easing: "ease-out" });
+    anim.onfinish = () => {
+      if (animRef.current !== anim) return;
+      details.open = false;
+      animRef.current = null;
+    };
+    animRef.current = anim;
+  };
+
+  const onToggle = () => {
+    openRef.current = ref.current?.open ?? false;
+  };
+
+  return (
+    <details ref={ref} onToggle={onToggle} className="group border-t border-line last-of-type:border-b">
+      <summary
+        onClick={onClick}
+        className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-[22px] font-display text-[28px] font-bold [&::-webkit-details-marker]:hidden"
+      >
+        {q}
+        <span aria-hidden className="font-mono text-[22px] text-accent group-open:hidden">
+          +
+        </span>
+        <span aria-hidden className="hidden font-mono text-[22px] text-accent group-open:inline">
+          -
+        </span>
+      </summary>
+      <div ref={bodyRef} className="overflow-hidden">
+        <p className="max-w-[68ch] pb-6 text-mute">{a}</p>
+      </div>
+    </details>
+  );
+}
+
 export function Landing() {
   const reduced = useReducedMotion();
   const city = usePolling<CityResponse>("/api/lens/city/data?window=24h", 60_000);
@@ -315,6 +388,64 @@ export function Landing() {
   const hero = useRef<HTMLElement>(null);
   const [heroVisible, setHeroVisible] = useState(true);
   const [gl, setGl] = useState<boolean | null>(null);
+  // The Lenses panel expands to a full-screen overlay (Phase 15 item 3); Escape closes it and the page scroll locks.
+  const [expanded, setExpanded] = useState(false);
+  const expandedDialogRef = useRef<HTMLDivElement>(null);
+  const expandedCloseRef = useRef<HTMLButtonElement>(null);
+  const focusReturnRef = useRef<HTMLElement | null>(null);
+
+  const onLensKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const key = event.key;
+    if (key !== "ArrowRight" && key !== "ArrowLeft" && key !== "Home" && key !== "End") return;
+    event.preventDefault();
+    const focused = LENSES.findIndex((item) => document.activeElement?.id === `landing-lens-tab-${item.key}`);
+    const current = focused >= 0 ? focused : LENSES.findIndex((item) => item.key === lensKey);
+    const next = key === "Home" ? 0 : key === "End" ? LENSES.length - 1 : (current + (key === "ArrowRight" ? 1 : LENSES.length - 1)) % LENSES.length;
+    const nextLens = LENSES[next]!;
+    setLensKey(nextLens.key);
+    document.getElementById(`landing-lens-tab-${nextLens.key}`)?.focus();
+  };
+
+  useEffect(() => {
+    if (!expanded) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    expandedCloseRef.current?.focus();
+
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setExpanded(false);
+        return;
+      }
+      if (e.key !== "Tab") return;
+
+      const focusable = expandedDialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKey);
+      const target = focusReturnRef.current;
+      focusReturnRef.current = null;
+      if (target?.isConnected) target.focus();
+    };
+  }, [expanded]);
 
   useEffect(() => {
     const probe = document.createElement("canvas");
@@ -332,7 +463,7 @@ export function Landing() {
       <nav className="fixed inset-x-0 top-0 z-50 border-b border-line bg-[rgba(11,13,18,.82)] backdrop-blur-[10px]" aria-label="Main">
         <div className={`${wrap} flex h-16 items-center gap-7`}>
           <a href="#top" aria-label="Metro, top of page" className="font-display text-[26px] font-black tracking-[0.04em] text-accent no-underline">
-            METRO
+            <BrandMark />
           </a>
           {[
             ["#lenses", "Lenses"],
@@ -360,7 +491,7 @@ export function Landing() {
         <div aria-hidden className="pointer-events-none absolute inset-0 z-[1] bg-[linear-gradient(90deg,rgba(11,13,18,.92)_0,rgba(11,13,18,.7)_34%,rgba(11,13,18,0)_62%)]" />
         <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-[46%] bg-[linear-gradient(180deg,rgba(11,13,18,0),rgba(11,13,18,.92)_62%,#0b0d12)]" />
         <div className={`${wrap} relative z-[2] pb-16 max-[980px]:pb-10`}>
-          <h1 className="max-w-[9ch] font-display text-[clamp(64px,10.5vw,148px)] font-extrabold uppercase leading-[.95] tracking-[0.005em]">
+          <h1 className="max-w-[9ch] font-display text-[clamp(51px,8.4vw,118px)] font-extrabold uppercase leading-[.95] tracking-[0.005em]">
             The chain, seen as a <em className="not-italic text-accent">city</em>
           </h1>
           <p className={`${lead} mt-[22px] mb-[30px] text-[#b7bece]`}>
@@ -385,12 +516,8 @@ export function Landing() {
             <h2 className={h2}>Rows tell you what happened. Shape tells you where to look.</h2>
           </Reveal>
           <Reveal>
-            <p className={`${lead} mb-[18px]`}>
-              An explorer lists transactions one at a time. A chart shows one line. Neither shows that swaps got expensive at 15:00 while transfers stayed cheap, or that one token is quietly held by ten wallets.
-            </p>
-            <p className={lead}>
-              Metro draws every action type and every Pons token as a building sized by the metric you pick and colored by what it costs. You spot the tall red one, click it, and land on the transactions behind it.
-            </p>
+            <TextAnimate className={`${lead} mb-[18px]`} text="An explorer lists transactions one at a time. A chart shows one line. Neither shows that swaps got expensive at 15:00 while transfers stayed cheap, or that one token is quietly held by ten wallets." />
+            <TextAnimate className={lead} text="Metro draws every action type and every Pons token as a building sized by the metric you pick and colored by what it costs. You spot the tall red one, click it, and land on the transactions behind it." />
           </Reveal>
         </div>
       </section>
@@ -402,23 +529,33 @@ export function Landing() {
             <h2 className={h2}>Each lens answers one question.</h2>
           </Reveal>
           <Reveal className="mt-12 grid grid-cols-[.9fr_1.1fr] items-stretch gap-14 max-[980px]:grid-cols-1 max-[980px]:gap-9">
-            <div className="flex flex-col border-t border-line" role="tablist" aria-label="Lenses">
+            <div className="flex flex-col border-t border-line" role="tablist" aria-label="Lenses" onKeyDown={onLensKeyDown}>
               {LENSES.map((l) => (
                 <button
                   key={l.key}
+                  id={`landing-lens-tab-${l.key}`}
                   type="button"
                   role="tab"
                   aria-selected={l.key === lensKey}
+                  aria-controls="landing-lens-panel"
+                  tabIndex={l.key === lensKey ? 0 : -1}
                   onClick={() => setLensKey(l.key)}
-                  className={`group grid grid-cols-[44px_1fr] items-baseline gap-x-3 gap-y-1.5 border-b border-line px-1 py-[18px] text-left ${l.key === lensKey ? "text-text" : "text-mute"}`}
+                  className={`group grid grid-cols-[44px_1fr] items-baseline gap-x-3 gap-y-1.5 border-b border-l-2 border-line px-1 py-[18px] text-left transition-colors ${l.key === lensKey ? "border-l-accent bg-panel2/40 text-text" : "border-l-transparent text-mute"}`}
                 >
-                  <span className="font-mono text-[12px] text-mute">{l.n}</span>
+                  <span className={`font-mono text-[12px] ${l.key === lensKey ? "text-accent" : "text-mute"}`}>{l.n}</span>
                   <b className={`font-display text-[28px] font-bold leading-none group-hover:text-accent ${l.key === lensKey ? "text-accent" : "text-text"}`}>{l.name}</b>
                   <span className="col-start-2 text-[15px]">{l.q}</span>
                 </button>
               ))}
             </div>
-            <LensStage lens={lens} city={city.data} />
+            <LensStage
+              lens={lens}
+              city={city.data}
+              onExpand={() => {
+                focusReturnRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                setExpanded(true);
+              }}
+            />
           </Reveal>
         </div>
       </section>
@@ -427,7 +564,7 @@ export function Landing() {
         <div className={`${wrap} grid grid-cols-2 items-center gap-16 max-[980px]:grid-cols-1 max-[980px]:gap-9`}>
           <Reveal>
             <div className={eyebrow}>Subsidy Cliff</div>
-            <div className="font-display text-[clamp(80px,12vw,168px)] font-black leading-[.85] tracking-[0.005em] text-accent">
+            <div className="font-display text-[clamp(64px,9.6vw,134px)] font-black leading-[.85] tracking-[0.005em] text-accent">
               29 Sep
               <small className="mt-[34px] block text-[.26em] font-bold tracking-[0.06em] text-text">The rebate window closes</small>
             </div>
@@ -436,7 +573,7 @@ export function Landing() {
             </p>
             <ul className="mt-6 list-none border-t border-line">
               {["Share of transactions that pay a fee, before and after", "Fee per action type, so you see which actions got dearer", "How many wallets active before are still active after", "Shift between swaps, transfers and launches"].map((t, i) => (
-                <li key={t} className="flex gap-3.5 border-b border-line py-3 text-[16px] text-[#c4cad8]">
+                <li key={t} className="flex gap-3.5 border-b border-line py-3 text-[16px] text-[#c4cad8] transition-colors hover:bg-accent/10">
                   <b className="min-w-7 pt-1 font-mono text-[12px] font-medium text-accent">{String(i + 1).padStart(2, "0")}</b>
                   {t}
                 </li>
@@ -459,8 +596,10 @@ export function Landing() {
             <h2 className={h2}>Every sentence carries its own proof.</h2>
           </Reveal>
           <div className="mt-11 grid grid-cols-[1.1fr_.9fr] items-start gap-14 max-[980px]:grid-cols-1 max-[980px]:gap-9">
-            <Reveal className="relative rounded-[4px] border border-line bg-panel p-6">
-              <TraceCard />
+            <Reveal>
+              <div className="tilt-card relative rounded-[4px] border border-line bg-panel p-6">
+                <TraceCard />
+              </div>
             </Reveal>
             <Reveal>
               <ol className="list-none">
@@ -469,7 +608,7 @@ export function Landing() {
                   ["It states its sample and window", 'How many transactions, which dates. Under 30 samples it says "not enough data yet" instead.'],
                   ["It opens the view that made it", "The button loads the lens with the same filters, so you can check the figure yourself."],
                 ].map(([t, s], i) => (
-                  <li key={t} className="relative border-b border-line py-4 pl-[46px]">
+                  <li key={t} className="relative border-b border-line py-4 pl-[46px] transition-colors hover:bg-accent/10">
                     <span aria-hidden className="absolute top-4 left-0 flex size-[26px] items-center justify-center rounded-[2px] bg-accent font-mono text-[12px] text-bg">
                       {i + 1}
                     </span>
@@ -490,20 +629,15 @@ export function Landing() {
             <h2 className={h2}>An AI that writes. Code that checks.</h2>
             <p className={`${lead} mt-[18px]`}>Ask in your own words, within a listed set of topics. Surveyor explains the answer, but it never sees raw data and never does the math; every number it writes is checked against the computed facts first.</p>
           </Reveal>
-          <Reveal className="mt-11 grid grid-cols-4 overflow-hidden rounded-[4px] border border-line max-[980px]:grid-cols-1">
-            {[
-              ["Step 1", "Facts are computed", "Queries and rules produce the numbers for your question: window, action, token, metric.", "Code"],
-              ["Step 2", "Surveyor writes", "A free model on OpenRouter receives only those facts and writes a short explanation.", "Model"],
-              ["Step 3", "Every number is matched", "Each figure in the text must exist in the facts. A mismatch rejects the answer and asks again.", "Code"],
-              ["Step 4", "Answer with sources", "You get the text, the facts it used, and the lens that shows them. Nothing unchecked reaches you.", "Code"],
-            ].map(([k, t, p, who]) => (
-              <div key={k} className="min-h-[230px] border-r border-line bg-panel px-[22px] py-6 last:border-r-0 max-[980px]:min-h-0 max-[980px]:border-r-0 max-[980px]:border-b max-[980px]:last:border-b-0">
-                <div className="mb-2.5 font-mono text-[11px] uppercase tracking-[0.08em] text-accent">{k}</div>
-                <h3 className="mb-2 font-display text-[26px] font-bold leading-[1.05]">{t}</h3>
-                <p className="text-[15px] text-mute">{p}</p>
-                <div className="mt-3 border-t border-dashed border-line pt-2.5 font-mono text-[11px] text-mute">{who}</div>
-              </div>
-            ))}
+          <Reveal className="mt-11">
+            <FeatureCarousel
+              steps={[
+                { k: "Step 1", t: "Facts are computed", p: "Queries and rules produce the numbers for your question: window, action, token, metric.", who: "Code" },
+                { k: "Step 2", t: "Surveyor writes", p: "A free model on OpenRouter receives only those facts and writes a short explanation.", who: "Model" },
+                { k: "Step 3", t: "Every number is matched", p: "Each figure in the text must exist in the facts. A mismatch rejects the answer and asks again.", who: "Code" },
+                { k: "Step 4", t: "Answer with sources", p: "You get the text, the facts it used, and the lens that shows them. Nothing unchecked reaches you.", who: "Code" },
+              ]}
+            />
           </Reveal>
           <Reveal className="mt-[26px] flex flex-wrap overflow-hidden rounded-[4px] border border-line font-mono text-[12px]">
             <div className="contents" aria-label="Fallback order">
@@ -526,17 +660,17 @@ export function Landing() {
             <div className={eyebrow}>Limits, stated up front</div>
             <h2 className={h2}>What Metro will not do.</h2>
           </Reveal>
-          <div className="mt-10 grid grid-cols-2 gap-x-14 max-[980px]:grid-cols-1">
+          <div className="mt-10 grid grid-cols-4 gap-4 max-[980px]:grid-cols-1">
             {[
               ["Predict prices", "Surveyor explains what the data shows. It gives no forecast and no advice to buy or sell."],
               ["Accuse wallets", "The graph groups wallets by patterns it can explain, such as being funded by the same address in the window. It does not label anyone a bot or a fraud."],
               ["Draw a chart without data", "When there is too little data, the view says so. A lens never fills in for numbers that do not exist."],
               ["Pretend the subsidy label is official", "Which transactions were rebated is an estimate from fee patterns, and every view that uses it says so."],
             ].map(([t, p]) => (
-              <Reveal key={t} className="border-t border-line py-5">
-                <h3 className="mb-1.5 font-display text-[26px] font-bold leading-[1.05]">{t}</h3>
-                <p className="text-[16px] text-mute">{p}</p>
-              </Reveal>
+              <div key={t} className="rounded-[6px] border border-line bg-panel p-5 transition-colors hover:bg-accent/10">
+                <h3 className="mb-1.5 font-display text-[22px] font-bold leading-[1.05]">{t}</h3>
+                <p className="text-[15px] text-mute">{p}</p>
+              </div>
             ))}
           </div>
         </div>
@@ -547,12 +681,12 @@ export function Landing() {
           <Reveal>
             <div className={eyebrow}>Dispatch</div>
             <h2 className={h2}>A daily report you can forward.</h2>
-            <p className={`${lead} mt-[18px]`}>
-              Every day after 00:10 UTC Metro writes a report from the same facts: the numbers, the findings, what moved most. Each report has its own page, and exports to Markdown or PDF. Build a custom one for any date range, with the lens pictures you pick.
-            </p>
+            <TextAnimate className={`${lead} mt-[18px]`} text="Every day after 01:10 UTC Metro writes a report from the same facts: the numbers, the findings, what moved most. Each report has its own page, and exports to Markdown or PDF. Build a custom one for any date range, with the lens pictures you pick." />
           </Reveal>
           <Reveal>
-            <DispatchSample />
+            <div className="tilt-card rounded-[4px]">
+              <DispatchSample />
+            </div>
           </Reveal>
         </div>
       </section>
@@ -563,32 +697,22 @@ export function Landing() {
             <div className={eyebrow}>Questions</div>
             <h2 className={h2}>Before you open it.</h2>
           </Reveal>
-          {[
+          {([
             ["Is this live chain data?", "Yes, from the blocks ingested so far. The Collector reads Robinhood Chain in bounded runs for now, so every view states the window it covers and says so when a window has no data. Nothing on this page is sample data."],
             ["Where do the numbers come from?", "Blocks, transactions and Pons launch events from the chain's RPC; ETH prices and chain economics from DefiLlama. Blockscout and growthepie serve as cross-checks when they can be reached. Every view can show the window and sample behind it."],
             ["Do I need to connect a wallet?", "No. Metro only reads public chain data. Nothing asks for a signature or holds funds."],
             ["Does it give trading advice?", "No. It reports what happened and what it cost. It makes no price predictions and no recommendations."],
             ["Why is it desktop only?", "The lenses need room: a 3D scene next to a data panel and a time line. Below 1280 px wide, the app asks you to open it on a wider screen instead of showing a cramped version."],
             ["Is Metro affiliated with Robinhood?", "No. It is independent analytics that reads a public chain."],
-          ].map(([q, a]) => (
-            <details key={q} className="group border-t border-line last-of-type:border-b">
-              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-[22px] font-display text-[28px] font-bold [&::-webkit-details-marker]:hidden">
-                {q}
-                <span aria-hidden className="font-mono text-[22px] text-accent group-open:hidden">
-                  +
-                </span>
-                <span aria-hidden className="hidden font-mono text-[22px] text-accent group-open:inline">
-                  -
-                </span>
-              </summary>
-              <p className="max-w-[68ch] pb-6 text-mute">{a}</p>
-            </details>
+          ] as const).map(([q, a]) => (
+            <FaqItem key={q} q={q} a={a} />
           ))}
         </div>
       </section>
 
-      <section id="end" className="scroll-mt-16 border-t border-line py-[120px] max-[980px]:py-20">
-        <Reveal className={wrap}>
+      <section id="end" className="relative scroll-mt-16 overflow-hidden border-t border-line py-[120px] max-[980px]:py-20">
+        <Waveform className="pointer-events-none absolute inset-x-0 bottom-0 h-[240px] w-full opacity-40" />
+        <Reveal className={`${wrap} relative`}>
           <h2 className={`${h2} max-w-[14ch]`}>See the chain before the cliff and after it.</h2>
           <p className={`${lead} mt-[18px] mb-7`}>Open Metro, rotate the city, and follow any building back to its transactions.</p>
           <div className="flex flex-wrap gap-3">
@@ -605,7 +729,9 @@ export function Landing() {
       <footer className="border-t border-line py-10 text-[14px] text-mute">
         <div className={`${wrap} flex flex-wrap justify-between gap-6`}>
           <span>
-            <b className="font-display text-[20px] tracking-[0.04em] text-accent">METRO</b> &nbsp; Independent analytics for Robinhood Chain. Not affiliated with Robinhood.
+            <b className="font-display text-[20px] tracking-[0.04em] text-accent">
+              <BrandMark />
+            </b>{" "} Independent analytics for Robinhood Chain. Not affiliated with Robinhood.
           </span>
           <span className="font-mono text-[12px]">
             Data: blocks ingested from Robinhood Chain RPC.{" "}
@@ -619,6 +745,22 @@ export function Landing() {
           </span>
         </div>
       </footer>
+
+      {expanded ? (
+        <div ref={expandedDialogRef} className="fixed inset-0 z-[70] flex flex-col bg-[rgba(11,13,18,.96)] p-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`${lens.name} panel, expanded`}>
+          <div className="mx-auto flex h-full w-full max-w-[1400px] flex-col">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="font-mono text-[12px] tracking-[0.08em] text-mute uppercase">{lens.name} · live data</span>
+              <button ref={expandedCloseRef} type="button" onClick={() => setExpanded(false)} className="min-h-11 rounded-[3px] border border-mute/70 bg-panel2 px-3 py-1.5 text-[12px] hover:border-mute">
+                Close
+              </button>
+            </div>
+            <div className="min-h-0 flex-1">
+              <LensStage lens={lens} city={city.data} expanded />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { StatsResponse } from "../../lib/api-types.ts";
 import { formatCountCompact, formatDay, formatGwei, formatUsdCompact, NA } from "../../lib/format.ts";
+import { BrandMark } from "./BrandMark.tsx";
 
 const POLL_MS = 5_000;
 
@@ -124,7 +125,7 @@ export function Ticker() {
   return (
     <header className="flex h-14 items-center border-b border-line bg-panel pr-4" aria-label="Chain readout" aria-busy={state.kind === "loading"}>
       <div className="flex h-14 w-16 flex-none items-center justify-center border-r border-line font-display text-[26px] font-extrabold tracking-[0.02em] text-accent" aria-label="Metro">
-        M
+        <BrandMark mark />
       </div>
       <Readout label="Gas price" value={d?.gas_price_gwei != null ? formatGwei(d.gas_price_gwei) : dash} unit={d?.gas_price_gwei != null ? "Gwei" : undefined} title="eth_gasPrice, refreshed every minute" />
       <Readout label="Base fee" value={d?.base_fee_gwei != null ? formatGwei(d.base_fee_gwei) : dash} unit={d?.base_fee_gwei != null ? "Gwei" : undefined} title="Base fee of the newest ingested block" />
